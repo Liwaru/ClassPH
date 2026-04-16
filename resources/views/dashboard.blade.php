@@ -1081,7 +1081,7 @@
                 </div>
                 <div class="chatbot-typing" id="chatbotTyping">
                     <div class="chatbot-typing-bubble">
-                        <span>Chatbot sedang menjawab</span>
+                        <span id="chatbotTypingText">Chatbot sedang menjawab</span>
                         <span class="chatbot-typing-dots" aria-hidden="true">
                             <span></span>
                             <span></span>
@@ -1098,7 +1098,7 @@
                         <i class="bi bi-arrow-up"></i>
                     </button>
                 </div>
-                <div class="chatbot-note">AI can make mistakes. Double-check for accuracy.</div>
+                <div class="chatbot-note">AI dapat membuat kesalahan. Periksa kembali untuk memastikan keakuratan.</div>
             </div>
         </div>
 
@@ -1118,6 +1118,7 @@
             const chatbotInput = document.getElementById('chatbotInput');
             const chatbotSend = document.getElementById('chatbotSend');
             const chatbotTyping = document.getElementById('chatbotTyping');
+            const chatbotTypingText = document.getElementById('chatbotTypingText');
             const chatbotPromptButtons = document.querySelectorAll('[data-chatbot-prompt]');
             const chatbotReset = document.getElementById('chatbotReset');
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
@@ -1208,6 +1209,12 @@
                     return;
                 }
 
+                if (chatbotTypingText && message) {
+                    chatbotTypingText.textContent = message;
+                } else if (chatbotTypingText) {
+                    chatbotTypingText.textContent = 'Chatbot sedang menjawab';
+                }
+
                 chatbotTyping.classList.toggle('visible', visible);
 
                 if (visible && chatbotConversation) {
@@ -1219,6 +1226,10 @@
             function appendMessage(content, role) {
                 if (!chatbotConversation) {
                     return;
+                }
+
+                if (role === 'assistant') {
+                    setChatbotStatus('', false);
                 }
 
                 const item = document.createElement('div');
@@ -1336,15 +1347,10 @@
                     const reply = payload.data?.message || 'Maaf, saya belum bisa memproses pertanyaan itu.';
                     chatbotAiEnabled = Boolean(payload.data?.ai?.enabled);
                     appendMessage(reply, 'assistant');
-                    const fallbackReason = payload.data?.ai?.fallback_reason || '';
-                    if (fallbackReason === 'quota_exceeded') {
-                        setChatbotStatus('Kuota AI free tier sedang penuh. Chatbot memakai jawaban sistem sementara.', true);
-                    } else {
-                        setChatbotStatus('', false);
-                    }
+                    setChatbotStatus('', false);
                 } catch (error) {
                     appendMessage('Terjadi kendala saat menghubungi chatbot. Silakan coba lagi.', 'assistant');
-                    setChatbotStatus('Pengiriman pesan gagal.', true);
+                    setChatbotStatus('', false);
                 } finally {
                     if (!chatbotCooldownTimer) {
                         setChatbotBusy(false);

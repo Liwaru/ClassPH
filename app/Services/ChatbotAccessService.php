@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 
 class ChatbotAccessService
@@ -53,6 +54,7 @@ class ChatbotAccessService
 
         $roomIds = $assignments->pluck('id_ruangan')->map(fn ($value) => (int) $value)->values()->all();
         $roomNames = $assignments->pluck('nama_ruangan')->values()->all();
+        $roomCodes = $assignments->pluck('kode_ruangan')->values()->all();
         $role = $this->mapRole((int) $user->level);
 
         return [
@@ -68,6 +70,7 @@ class ChatbotAccessService
             'scope' => [
                 'assigned_room_ids' => $roomIds,
                 'assigned_room_names' => $roomNames,
+                'assigned_room_codes' => $roomCodes,
                 'assigned_rooms' => $assignments->map(fn ($assignment) => [
                     'id_ruangan' => (int) $assignment->id_ruangan,
                     'kode_ruangan' => $assignment->kode_ruangan,
@@ -149,13 +152,7 @@ class ChatbotAccessService
 
     private function buildFallbackMessage(string $groundedAnswer, ?string $fallbackReason): string
     {
-        return match ($fallbackReason) {
-            'quota_exceeded' => $groundedAnswer.' AI sedang ramai digunakan pada free tier, jadi sementara saya memakai jawaban sistem yang aman.',
-            'connection_error' => $groundedAnswer.' Koneksi ke layanan AI sedang bermasalah, jadi saya memakai jawaban sistem terlebih dahulu.',
-            'request_failed' => $groundedAnswer.' Layanan AI sedang tidak stabil, jadi saya memakai jawaban sistem terlebih dahulu.',
-            'ai_not_configured', 'not_configured' => $groundedAnswer.' Mode AI live belum diaktifkan, jadi saya memakai jawaban sistem.',
-            default => $groundedAnswer,
-        };
+        return $groundedAnswer;
     }
 
     /**
@@ -240,6 +237,10 @@ class ChatbotAccessService
     {
         $text = mb_strtolower($message);
 
+        if ($this->containsAny($text, ['apa kabar', 'gimana kabar', 'bagaimana kabar', 'kabarmu'])) {
+            return 'wellbeing';
+        }
+
         if ($this->containsAny($text, ['halo', 'hallo', 'hai', 'hi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam'])) {
             return 'greeting';
         }
@@ -264,7 +265,7 @@ class ChatbotAccessService
             return 'identity';
         }
 
-        if ($this->containsAny($text, ['ai dari mana', 'kamu dari mana', 'anda dari mana', 'buatan siapa', 'dibuat siapa', 'model apa kamu'])) {
+        if ($this->containsAny($text, ['buatkan foto', 'buat foto', 'bikin foto', 'buatkan gambar', 'bikin gambar', 'generate gambar', 'generate image', 'buat logo', 'desainkan'])) {
             return 'out_of_scope';
         }
 
@@ -292,16 +293,24 @@ class ChatbotAccessService
             return 'database_access';
         }
 
+        if ($this->matchesCreateUserIntent($text)) {
+            return 'create_user';
+        }
+
+        if ($this->matchesUpdateUserLevelIntent($text)) {
+            return 'update_user_level';
+        }
+
+        if ($this->matchesDeleteUserIntent($text)) {
+            return 'delete_user';
+        }
+
         if ($this->containsAny($text, ['tambah', 'tambahkan', 'ubah', 'edit', 'hapus', 'delete', 'perbarui', 'update'])) {
             return 'write_action';
         }
 
         if ($this->containsAny($text, ['cara', 'bagaimana', 'bantuan', 'menu', 'fitur'])) {
             return 'help_navigation';
-        }
-
-        if ($this->containsAny($text, ['semua data', 'seluruh data', 'semua kelas', 'kelas lain', 'ruangan lain', 'user lain', 'semua siswa'])) {
-            return 'cross_scope_data';
         }
 
         if ($this->containsAny($text, ['pengajuan', 'permintaan', 'status pengajuan'])) {
@@ -316,6 +325,10 @@ class ChatbotAccessService
             return 'room_lookup';
         }
 
+        if ($this->containsAny($text, ['semua data', 'seluruh data', 'semua kelas', 'kelas lain', 'ruangan lain', 'user lain', 'semua siswa'])) {
+            return 'cross_scope_data';
+        }
+
         return 'general_help';
     }
 
@@ -328,11 +341,36 @@ class ChatbotAccessService
         $permissions = $context['permissions'] ?? [];
         $roleName = $context['role']['name'] ?? 'Pengguna';
         $scopeSummary = $context['scope']['scope_summary'] ?? 'Akses dibatasi sesuai peran akun.';
+        $level = (int) ($context['role']['level'] ?? 0);
+        $assignedRoomIds = $context['scope']['assigned_room_ids'] ?? [];
 
         if ($intent === 'database_access') {
             return [
                 'allowed' => false,
                 'message' => 'Maaf, chatbot tidak menampilkan database mentah atau query langsung. '.$scopeSummary,
+            ];
+        }
+
+        if (in_array($intent, ['room_lookup', 'inventory_lookup', 'request_lookup', 'cross_scope_data'], true)
+            && in_array($level, [1, 2], true)
+            && $assignedRoomIds === []) {
+            return [
+                'allowed' => false,
+                'message' => 'Maaf, akunmu belum memiliki penugasan kelas atau ruangan aktif. Hubungi superadmin untuk mengatur akses kelasmu.',
+            ];
+        }
+
+        if (in_array($intent, ['create_user', 'update_user_level', 'delete_user'], true)) {
+            if ((int) ($context['role']['level'] ?? 0) !== 3) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Maaf, aksi pengelolaan data hanya tersedia untuk akun superadmin.',
+                ];
+            }
+
+            return [
+                'allowed' => true,
+                'message' => '',
             ];
         }
 
@@ -343,19 +381,40 @@ class ChatbotAccessService
             ];
         }
 
+        $text = mb_strtolower($message);
+        $asksOwnData = $this->containsAny($text, ['saya', 'milik saya', 'kelas saya', 'ruangan saya', 'kelas binaan saya']);
+        $mentionedScope = $this->extractMentionedScopes($text);
+
         if ($intent === 'cross_scope_data' && ! ($permissions['read_all_data'] ?? false)) {
+            if ($asksOwnData) {
+                return [
+                    'allowed' => true,
+                    'message' => '',
+                ];
+            }
+
             return [
                 'allowed' => false,
                 'message' => 'Maaf, permintaan itu berada di luar akses akunmu. '.$scopeSummary,
             ];
         }
 
-        $text = mb_strtolower($message);
-        $asksOwnData = $this->containsAny($text, ['saya', 'milik saya', 'kelas saya', 'ruangan saya']);
-
         if (in_array($intent, ['room_lookup', 'inventory_lookup', 'request_lookup'], true)) {
+            $mentionsOutsideScope = $this->mentionsOutsideAssignedScope($context, $mentionedScope);
+            $mentionsAssignedScope = $this->mentionsAssignedScope($context, $mentionedScope);
+
+            if (in_array($level, [1, 2], true) && $mentionsOutsideScope) {
+                return [
+                    'allowed' => false,
+                    'message' => 'Maaf, kamu hanya bisa mengakses data kelas yang sesuai dengan session dan penugasanmu. '.$scopeSummary,
+                ];
+            }
+
             if (($permissions['read_all_data'] ?? false) || ($permissions['read_assigned_scope'] ?? false) || ($permissions['read_own_data'] ?? false)) {
-                if (($permissions['read_all_data'] ?? false) === false && ! $asksOwnData && $this->containsAny($text, ['lain', 'semua', 'seluruh'])) {
+                if (($permissions['read_all_data'] ?? false) === false
+                    && ! $asksOwnData
+                    && ! $mentionsAssignedScope
+                    && $this->containsAny($text, ['lain', 'semua', 'seluruh'])) {
                     return [
                         'allowed' => false,
                         'message' => 'Maaf, chatbot hanya boleh menampilkan data dalam lingkup akses akunmu. '.$scopeSummary,
@@ -381,6 +440,7 @@ class ChatbotAccessService
     private function buildAnswer(array $context, string $intent, string $message): string
     {
         return match ($intent) {
+            'wellbeing' => $this->buildWellbeingAnswer($context),
             'greeting' => $this->buildGreetingAnswer($context),
             'confused' => $this->buildConfusedAnswer($context),
             'small_talk' => $this->buildSmallTalkAnswer($context),
@@ -393,6 +453,9 @@ class ChatbotAccessService
             'no_followup' => $this->buildNoFollowupAnswer($context),
             'unclear_text' => $this->buildUnclearTextAnswer(),
             'out_of_scope' => $this->buildOutOfScopeAnswer(),
+            'create_user' => $this->buildCreateUserAnswer($message),
+            'update_user_level' => $this->buildUpdateUserLevelAnswer($message),
+            'delete_user' => $this->buildDeleteUserAnswer($message),
             'help_navigation', 'general_help' => $this->buildHelpAnswer($context),
             'room_lookup' => $this->buildRoomAnswer($context),
             'inventory_lookup' => $this->buildInventoryAnswer($context, $message),
@@ -406,12 +469,17 @@ class ChatbotAccessService
     /**
      * @param  array<string, mixed>  $context
      */
+    private function buildWellbeingAnswer(array $context): string
+    {
+        return 'Halo, '.$context['user']['nama'].'. Saya baik, terima kasih. Kalau ada yang ingin kamu tanyakan soal InfraSPH, saya siap membantu.';
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
     private function buildGreetingAnswer(array $context): string
     {
-        $roleName = $context['role']['name'] ?? 'Pengguna';
-        $scopeSummary = $context['scope']['scope_summary'] ?? 'Akses mengikuti peran akun.';
-
-        return 'Halo, '.$context['user']['nama'].'. Saya siap membantu sebagai asisten '.$roleName.'. '.$scopeSummary.' Kalau mau, kamu bisa langsung tanya soal inventaris, ruangan, pengajuan, atau cara memakai fitur di dashboard.';
+        return 'Halo, '.$context['user']['nama'].'. Saya siap membantu. Kalau ada yang ingin ditanyakan soal kelas, inventaris, atau pengajuan, langsung saja.';
     }
 
     /**
@@ -453,7 +521,7 @@ class ChatbotAccessService
     {
         $roleName = $context['role']['name'] ?? 'Pengguna';
 
-        return 'Saya adalah asisten AI InfraSPH. Tugas saya membantu menjawab pertanyaan, mengarahkan penggunaan fitur, dan menampilkan informasi sesuai akses akun '.$roleName.' kamu.';
+        return 'Saya adalah asisten AI InfraSPH. Saya membantu menjawab pertanyaan umum, mengarahkan penggunaan fitur, dan menampilkan informasi sistem sesuai akses akun '.$roleName.' kamu.';
     }
 
     /**
@@ -510,7 +578,7 @@ class ChatbotAccessService
      */
     private function buildOutOfScopeAnswer(): string
     {
-        return 'Maaf, saya tidak memiliki jawaban untuk itu. Saya fokus membantu penggunaan sistem InfraSPH, seperti inventaris, ruangan, pengajuan, dan navigasi dashboard.';
+        return 'Maaf, saya tidak bisa membantu untuk permintaan itu. Saya fokus membantu penggunaan sistem InfraSPH, seperti inventaris, ruangan, pengajuan, data kelas yang sesuai akses, dan navigasi dashboard.';
     }
 
     /**
@@ -518,10 +586,7 @@ class ChatbotAccessService
      */
     private function buildHelpAnswer(array $context): string
     {
-        $roleName = $context['role']['name'] ?? 'Pengguna';
-        $scopeSummary = $context['scope']['scope_summary'] ?? 'Akses mengikuti peran akun.';
-
-        return 'Halo, '.$context['user']['nama'].'. Saya siap membantu sebagai asisten untuk '.$roleName.'. '.$scopeSummary.' Kamu bisa bertanya tentang inventaris, ruangan, status pengajuan, atau cara memakai fitur dashboard.';
+        return 'Saya siap membantu soal inventaris, ruangan, pengajuan, dan penggunaan dashboard sesuai akses akunmu.';
     }
 
     /**
@@ -601,8 +666,8 @@ class ChatbotAccessService
 
             $lines = $details->map(fn ($row) => $row->nama_ruangan.': '.ucfirst($row->nama_barang).' (baik '.$row->jumlah_baik.', rusak '.$row->jumlah_rusak.')')->all();
 
-            return 'Berikut data barang dalam kelasmu: '.implode(' | ', $lines).'.';
-        }
+        return 'Berikut data barang dalam kelasmu: '.implode(' | ', $lines).'.';
+    }
 
         $lines = $summary->map(fn ($row) => $row->nama_ruangan.': '.$row->total_baik.' baik, '.$row->total_rusak.' rusak')->all();
 
@@ -687,10 +752,160 @@ class ChatbotAccessService
         $level = (int) ($context['role']['level'] ?? 0);
 
         if ($level === 3) {
-            return 'Akun superadmin memiliki cakupan aksi paling lengkap. Pada tahap fondasi ini, chatbot baru menandai bahwa permintaan write termasuk hak superadmin, tetapi eksekusi tambah, ubah, dan hapus belum diaktifkan.';
+            return 'Akun superadmin memiliki hak aksi tertinggi. Saat ini chatbot sudah mulai mendukung aksi eksplisit untuk pengelolaan user, dan aksi sistem lain bisa ditambahkan bertahap dengan validasi backend.';
         }
 
         return 'Akun ini hanya memiliki akses baca atau bantuan terbatas, jadi aksi tambah, ubah, dan hapus tidak tersedia lewat chatbot.';
+    }
+
+    private function buildCreateUserAnswer(string $message): string
+    {
+        if (! preg_match('/tambah user\s+nama\s+([a-z0-9_\-\s]+)\s+level\s+([1-4])\s+password\s+([^\s]+)/i', $message, $matches)) {
+            return 'Format tambah user belum sesuai. Gunakan: tambah user nama NAMA level 1-4 password PASSWORD';
+        }
+
+        $name = trim($matches[1]);
+        $level = (int) $matches[2];
+        $password = trim($matches[3]);
+
+        if (DB::table('users')->whereRaw('LOWER(nama) = ?', [mb_strtolower($name)])->exists()) {
+            return 'User dengan nama '.$name.' sudah ada.';
+        }
+
+        DB::table('users')->insert([
+            'nis' => null,
+            'nama' => $name,
+            'password' => Hash::make($password),
+            'level' => $level,
+        ]);
+
+        return 'User '.$name.' berhasil ditambahkan dengan level '.$level.'.';
+    }
+
+    private function buildUpdateUserLevelAnswer(string $message): string
+    {
+        if (! preg_match('/ubah level user\s+([a-z0-9_\-\s]+)\s+(jadi|menjadi)\s+([1-4])/i', $message, $matches)) {
+            return 'Format ubah level user belum sesuai. Gunakan: ubah level user NAMA jadi 1-4';
+        }
+
+        $name = trim($matches[1]);
+        $level = (int) $matches[3];
+        $user = DB::table('users')->whereRaw('LOWER(nama) = ?', [mb_strtolower($name)])->first();
+
+        if (! $user) {
+            return 'User '.$name.' tidak ditemukan.';
+        }
+
+        DB::table('users')
+            ->where('id_user', $user->id_user)
+            ->update(['level' => $level]);
+
+        return 'Level user '.$name.' berhasil diubah menjadi '.$level.'.';
+    }
+
+    private function buildDeleteUserAnswer(string $message): string
+    {
+        if (! preg_match('/hapus user\s+([a-z0-9_\-\s]+)/i', $message, $matches)) {
+            return 'Format hapus user belum sesuai. Gunakan: hapus user NAMA';
+        }
+
+        $name = trim($matches[1]);
+        $user = DB::table('users')->whereRaw('LOWER(nama) = ?', [mb_strtolower($name)])->first();
+
+        if (! $user) {
+            return 'User '.$name.' tidak ditemukan.';
+        }
+
+        if ((int) $user->level === 4) {
+            return 'User owner tidak dapat dihapus lewat chatbot.';
+        }
+
+        DB::table('users')->where('id_user', $user->id_user)->delete();
+
+        return 'User '.$name.' berhasil dihapus.';
+    }
+
+    private function matchesCreateUserIntent(string $text): bool
+    {
+        return preg_match('/tambah user\s+nama\s+.+\s+level\s+[1-4]\s+password\s+\S+/i', $text) === 1;
+    }
+
+    private function matchesUpdateUserLevelIntent(string $text): bool
+    {
+        return preg_match('/ubah level user\s+.+\s+(jadi|menjadi)\s+[1-4]/i', $text) === 1;
+    }
+
+    private function matchesDeleteUserIntent(string $text): bool
+    {
+        return preg_match('/hapus user\s+.+/i', $text) === 1;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function extractMentionedScopes(string $text): array
+    {
+        preg_match_all('/\b(?:kelas\s*)?([7-9][a-c]|rpl\s*xii?a?|rpl\s*xiib|bdp\s*xii?|akl\s*xii?)\b/i', $text, $matches);
+
+        return collect($matches[1] ?? [])
+            ->map(fn ($value) => strtoupper(str_replace(' ', '', trim($value))))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<int, string>  $mentionedScope
+     */
+    private function mentionsOutsideAssignedScope(array $context, array $mentionedScope): bool
+    {
+        if ($mentionedScope === []) {
+            return false;
+        }
+
+        $assignedNames = collect($context['scope']['assigned_room_names'] ?? [])
+            ->map(fn ($value) => strtoupper(str_replace(' ', '', (string) $value)));
+        $assignedCodes = collect($context['scope']['assigned_room_codes'] ?? [])
+            ->map(fn ($value) => strtoupper(str_replace([' ', 'KLS-'], '', (string) $value)));
+
+        foreach ($mentionedScope as $scope) {
+            $normalized = strtoupper(str_replace(' ', '', $scope));
+
+            if ($assignedNames->contains($normalized) || $assignedCodes->contains($normalized)) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<int, string>  $mentionedScope
+     */
+    private function mentionsAssignedScope(array $context, array $mentionedScope): bool
+    {
+        if ($mentionedScope === []) {
+            return false;
+        }
+
+        $assignedNames = collect($context['scope']['assigned_room_names'] ?? [])
+            ->map(fn ($value) => strtoupper(str_replace([' ', 'KELAS'], '', (string) $value)));
+        $assignedCodes = collect($context['scope']['assigned_room_codes'] ?? [])
+            ->map(fn ($value) => strtoupper(str_replace([' ', 'KLS-'], '', (string) $value)));
+
+        foreach ($mentionedScope as $scope) {
+            $normalized = strtoupper(str_replace([' ', 'KELAS'], '', $scope));
+
+            if ($assignedNames->contains($normalized) || $assignedCodes->contains($normalized)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function containsAny(string $text, array $needles): bool
