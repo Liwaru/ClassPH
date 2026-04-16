@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 class ChatbotAccessService
 {
     public function __construct(
+        private GroqChatService $groqChatService,
         private GeminiChatService $geminiChatService
     ) {
     }
@@ -117,18 +118,37 @@ class ChatbotAccessService
         $fallbackReason = null;
 
         if ($this->aiEnabled()) {
-            $aiReply = $this->geminiChatService->generateReply($message, $context, $intent, $groundedAnswer, $history);
+            $aiReply = null;
 
-            if (filled($aiReply)) {
-                $finalMessage = $aiReply;
-                $aiUsed = true;
-            } else {
-                $fallbackReason = $this->geminiChatService->lastFailureReason() ?? 'ai_unavailable';
-                $finalMessage = $this->buildFallbackMessage($groundedAnswer, $fallbackReason);
+            if ($this->groqChatService->isConfigured()) {
+                $aiReply = $this->groqChatService->generateReply($message, $context, $intent, $groundedAnswer, $history);
+
+                if (filled($aiReply)) {
+                    $finalMessage = $aiReply;
+                    $aiUsed = true;
+                } else {
+                    $fallbackReason = $this->groqChatService->lastFailureReason() ?? 'ai_unavailable';
+                }
+            }
+
+            if (! $aiUsed && $this->geminiChatService->isConfigured()) {
+                $aiReply = $this->geminiChatService->generateReply($message, $context, $intent, $groundedAnswer, $history);
+
+                if (filled($aiReply)) {
+                    $finalMessage = $aiReply;
+                    $aiUsed = true;
+                    $fallbackReason = null;
+                } else {
+                    $fallbackReason = $this->geminiChatService->lastFailureReason() ?? $fallbackReason ?? 'ai_unavailable';
+                }
+            }
+
+            if (! $aiUsed) {
+                $finalMessage = $this->buildFallbackMessage($groundedAnswer, $intent, $fallbackReason);
             }
         } else {
             $fallbackReason = 'ai_not_configured';
-            $finalMessage = $this->buildFallbackMessage($groundedAnswer, $fallbackReason);
+            $finalMessage = $this->buildFallbackMessage($groundedAnswer, $intent, $fallbackReason);
         }
 
         return [
@@ -147,11 +167,27 @@ class ChatbotAccessService
 
     public function aiEnabled(): bool
     {
-        return $this->geminiChatService->isConfigured();
+        return $this->groqChatService->isConfigured() || $this->geminiChatService->isConfigured();
     }
 
-    private function buildFallbackMessage(string $groundedAnswer, ?string $fallbackReason): string
+    private function buildFallbackMessage(string $groundedAnswer, string $intent, ?string $fallbackReason): string
     {
+        if ($fallbackReason === 'quota_exceeded') {
+            return 'Layanan AI sedang tidak bisa dipakai karena kuota Gemini API habis. Percakapan masih tersimpan di sesi ini, tetapi jawaban pintar baru akan normal lagi setelah API key atau kuota Gemini diperbaiki.';
+        }
+
+        if ($fallbackReason === 'ai_not_configured' || $fallbackReason === 'not_configured') {
+            return 'Layanan AI belum terkonfigurasi dengan benar. Setelah API key valid dipasang, chatbot bisa menjawab lebih natural dan mengingat konteks percakapan sesi ini.';
+        }
+
+        if (in_array($fallbackReason, ['connection_error', 'request_failed'], true)) {
+            return 'Layanan AI sedang bermasalah saat dihubungi. Coba lagi sebentar lagi.';
+        }
+
+        if (in_array($intent, ['conversation', 'general_help', 'unclear_text'], true)) {
+            return 'Saya siap menanggapi pesanmu. Coba lanjutkan atau tulis sedikit lebih jelas, nanti saya jawab dengan lebih pas.';
+        }
+
         return $groundedAnswer;
     }
 
@@ -241,16 +277,8 @@ class ChatbotAccessService
             return 'wellbeing';
         }
 
-        if ($this->containsAny($text, ['halo', 'hallo', 'hai', 'hi', 'selamat pagi', 'selamat siang', 'selamat sore', 'selamat malam'])) {
-            return 'greeting';
-        }
-
-        if ($this->containsAny($text, ['hmm', 'hm', 'bingung', 'kurang paham', 'ga paham', 'gak paham', 'nggak paham'])) {
-            return 'confused';
-        }
-
-        if ($this->containsAny($text, ['bosan', 'gabut', 'gabut nih', 'iseng', 'lagi iseng'])) {
-            return 'small_talk';
+        if ($this->looksLikeConversationMessage($text)) {
+            return 'conversation';
         }
 
         if ($this->containsAny($text, ['gajadi', 'ga jadi', 'gak jadi', 'nggak jadi', 'batal', 'tidak jadi'])) {
@@ -285,8 +313,8 @@ class ChatbotAccessService
             return 'no_followup';
         }
 
-        if (preg_match('/^[a-z]{4,}$/', trim($text)) && ! str_contains($text, ' ')) {
-            return 'unclear_text';
+        if ($this->looksLikeMathQuestion($text)) {
+            return 'math_question';
         }
 
         if ($this->containsAny($text, ['database', 'sql', 'query', 'tabel', 'schema'])) {
@@ -441,9 +469,7 @@ class ChatbotAccessService
     {
         return match ($intent) {
             'wellbeing' => $this->buildWellbeingAnswer($context),
-            'greeting' => $this->buildGreetingAnswer($context),
-            'confused' => $this->buildConfusedAnswer($context),
-            'small_talk' => $this->buildSmallTalkAnswer($context),
+            'conversation' => $this->buildConversationAnswer(),
             'cancel' => $this->buildCancelAnswer($context),
             'gratitude' => $this->buildGratitudeAnswer($context),
             'identity' => $this->buildIdentityAnswer($context),
@@ -452,6 +478,7 @@ class ChatbotAccessService
             'acknowledgement' => $this->buildAcknowledgementAnswer($context),
             'no_followup' => $this->buildNoFollowupAnswer($context),
             'unclear_text' => $this->buildUnclearTextAnswer(),
+            'math_question' => $this->buildMathAnswer($message),
             'out_of_scope' => $this->buildOutOfScopeAnswer(),
             'create_user' => $this->buildCreateUserAnswer($message),
             'update_user_level' => $this->buildUpdateUserLevelAnswer($message),
@@ -471,31 +498,12 @@ class ChatbotAccessService
      */
     private function buildWellbeingAnswer(array $context): string
     {
-        return 'Halo, '.$context['user']['nama'].'. Saya baik, terima kasih. Kalau ada yang ingin kamu tanyakan soal InfraSPH, saya siap membantu.';
+        return 'Halo, '.$context['user']['nama'].'. Saya baik, terima kasih. Kalau ada yang ingin kamu tanyakan, baik soal pelajaran sekolah maupun fitur InfraSPH, saya siap membantu.';
     }
 
-    /**
-     * @param  array<string, mixed>  $context
-     */
-    private function buildGreetingAnswer(array $context): string
+    private function buildConversationAnswer(): string
     {
-        return 'Halo, '.$context['user']['nama'].'. Saya siap membantu. Kalau ada yang ingin ditanyakan soal kelas, inventaris, atau pengajuan, langsung saja.';
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     */
-    private function buildConfusedAnswer(array $context): string
-    {
-        return 'Tidak apa-apa, '.$context['user']['nama'].'. Kalau masih bingung, coba tulis pertanyaannya pelan-pelan atau sebutkan topiknya, nanti saya bantu jelaskan.';
-    }
-
-    /**
-     * @param  array<string, mixed>  $context
-     */
-    private function buildSmallTalkAnswer(array $context): string
-    {
-        return 'Santai saja, '.$context['user']['nama'].'. Kalau nanti ada yang ingin dicek di InfraSPH, tinggal tanya saya.';
+        return 'Tanggapi pesan user secara natural, santai, dan sesuai konteks percakapan.';
     }
 
     /**
@@ -511,7 +519,7 @@ class ChatbotAccessService
      */
     private function buildGratitudeAnswer(array $context): string
     {
-        return 'Sama-sama, '.$context['user']['nama'].'. Kalau masih ada yang ingin dicek, saya siap bantu lagi.';
+        return 'Sama-sama, '.$context['user']['nama'].'. Kalau masih ada soal pelajaran atau hal di InfraSPH yang ingin dicek, saya siap bantu lagi.';
     }
 
     /**
@@ -521,7 +529,7 @@ class ChatbotAccessService
     {
         $roleName = $context['role']['name'] ?? 'Pengguna';
 
-        return 'Saya adalah asisten AI InfraSPH. Saya membantu menjawab pertanyaan umum, mengarahkan penggunaan fitur, dan menampilkan informasi sistem sesuai akses akun '.$roleName.' kamu.';
+        return 'Saya adalah tutor AI dan asisten InfraSPH. Saya bisa membantu menjawab pertanyaan pelajaran sekolah, pertanyaan umum, serta penggunaan sistem sesuai akses akun '.$roleName.' kamu.';
     }
 
     /**
@@ -530,11 +538,11 @@ class ChatbotAccessService
     private function buildCapabilitiesAnswer(array $context): string
     {
         $level = (int) ($context['role']['level'] ?? 0);
-        $base = 'Saya bisa membantu menjelaskan fitur dashboard, menampilkan ringkasan inventaris, ruangan, dan status pengajuan sesuai hak akses akunmu.';
+        $base = 'Saya bisa membantu menjawab materi pelajaran sekolah, menjelaskan langkah pengerjaan soal, serta membantu fitur dashboard dan ringkasan data sesuai hak akses akunmu.';
 
         return match ($level) {
-            1 => $base.' Untuk akunmu, saya fokus pada data diri sendiri, ruangan yang ditugaskan, dan pengajuan milikmu.',
-            2 => $base.' Untuk akun wali kelas, saya bisa membantu data kelas sendiri dan lingkup penugasan wali kelas.',
+            1 => $base.' Untuk akunmu, akses sistem saya fokus pada data diri sendiri, ruangan yang ditugaskan, dan pengajuan milikmu.',
+            2 => $base.' Untuk akun wali kelas, akses sistem saya mencakup data kelas sendiri dan lingkup penugasan wali kelas.',
             3 => $base.' Untuk superadmin, saya juga bisa membantu ringkasan global sistem dan konteks operasional yang lebih luas.',
             4 => $base.' Untuk owner, saya bisa membantu akses baca seluruh data sekolah tanpa aksi tambah, ubah, atau hapus.',
             default => $base,
@@ -570,7 +578,28 @@ class ChatbotAccessService
      */
     private function buildUnclearTextAnswer(): string
     {
-        return 'Sepertinya ada salah ketik atau pesannya belum jelas. Bisa tulis ulang pertanyaannya?';
+        return 'Jika maksud user belum jelas, minta klarifikasi secara santai dan singkat.';
+    }
+
+    private function buildMathAnswer(string $message): string
+    {
+        $expression = $this->extractMathExpression($message);
+
+        if ($expression === null) {
+            return 'Saya siap bantu matematika. Coba kirim soalnya lebih jelas, misalnya `12 + 8` atau `berapa 24 dibagi 6`.';
+        }
+
+        $result = $this->evaluateMathExpression($expression);
+
+        if ($result === null) {
+            return 'Saya belum bisa menghitung bentuk soal itu secara otomatis. Coba kirim ekspresi yang lebih sederhana, misalnya `1+1`, `12 x 8`, atau `24 : 6`.';
+        }
+
+        $formattedResult = fmod($result, 1.0) === 0.0
+            ? number_format($result, 0, ',', '.')
+            : rtrim(rtrim(number_format($result, 10, '.', ''), '0'), '.');
+
+        return 'Jawabannya '.$formattedResult.'.';
     }
 
     /**
@@ -578,7 +607,7 @@ class ChatbotAccessService
      */
     private function buildOutOfScopeAnswer(): string
     {
-        return 'Maaf, saya tidak bisa membantu untuk permintaan itu. Saya fokus membantu penggunaan sistem InfraSPH, seperti inventaris, ruangan, pengajuan, data kelas yang sesuai akses, dan navigasi dashboard.';
+        return 'Maaf, saya belum bisa membantu untuk permintaan itu. Saya paling siap membantu materi pelajaran sekolah, pertanyaan umum, dan penggunaan InfraSPH sesuai akses akun.';
     }
 
     /**
@@ -586,7 +615,7 @@ class ChatbotAccessService
      */
     private function buildHelpAnswer(array $context): string
     {
-        return 'Saya siap membantu soal inventaris, ruangan, pengajuan, dan penggunaan dashboard sesuai akses akunmu.';
+        return 'Saya bisa membantu materi pelajaran sekolah, pertanyaan umum, dan fitur InfraSPH sesuai akses akunmu.';
     }
 
     /**
@@ -917,5 +946,172 @@ class ChatbotAccessService
         }
 
         return false;
+    }
+
+    private function looksLikeMathQuestion(string $text): bool
+    {
+        if ($this->containsAny($text, ['matematika', 'hitung', 'berapa hasil', 'hasil dari', 'jumlahkan', 'kurangkan', 'kali', 'dibagi'])) {
+            return true;
+        }
+
+        return preg_match('/^\s*[-+()0-9xX*\/:.,\s]+\s*=?\s*$/', $text) === 1
+            && preg_match('/\d/', $text) === 1;
+    }
+
+    private function looksLikeConversationMessage(string $text): bool
+    {
+        $trimmed = trim($text);
+
+        if ($trimmed === '') {
+            return false;
+        }
+
+        if (mb_strlen($trimmed) > 80) {
+            return false;
+        }
+
+        if ($this->looksLikeMathQuestion($trimmed)) {
+            return false;
+        }
+
+        return ! $this->containsAny($trimmed, [
+            'database', 'sql', 'query', 'tabel', 'schema',
+            'pengajuan', 'permintaan', 'inventaris', 'barang',
+            'kelas', 'ruangan', 'tambah', 'tambahkan', 'ubah',
+            'edit', 'hapus', 'delete', 'perbarui', 'update',
+            'menu', 'fitur',
+        ]);
+    }
+
+    private function extractMathExpression(string $message): ?string
+    {
+        $expression = mb_strtolower(trim($message));
+        $expression = str_replace(['×', 'x', ':'], ['*', '*', '/'], $expression);
+        $expression = str_replace(',', '.', $expression);
+        $expression = preg_replace('/\b(berapa|hasil|dari|adalah|hitung|berapa hasil)\b/u', ' ', $expression);
+        $expression = preg_replace('/[^0-9\.\+\-\*\/\(\)\s]/', ' ', $expression);
+        $expression = preg_replace('/\s+/', ' ', (string) $expression);
+        $expression = trim((string) $expression);
+
+        if ($expression === '' || preg_match('/\d/', $expression) !== 1) {
+            return null;
+        }
+
+        return $expression;
+    }
+
+    private function evaluateMathExpression(string $expression): ?float
+    {
+        preg_match_all('/\d+(?:\.\d+)?|[()+\-*\/]/', $expression, $matches);
+        $tokens = $matches[0] ?? [];
+
+        if ($tokens === []) {
+            return null;
+        }
+
+        $index = 0;
+        $value = $this->parseMathExpression($tokens, $index);
+
+        if ($value === null || $index !== count($tokens)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    private function parseMathExpression(array $tokens, int &$index): ?float
+    {
+        $value = $this->parseMathTerm($tokens, $index);
+
+        if ($value === null) {
+            return null;
+        }
+
+        while ($index < count($tokens) && in_array($tokens[$index], ['+', '-'], true)) {
+            $operator = $tokens[$index++];
+            $right = $this->parseMathTerm($tokens, $index);
+
+            if ($right === null) {
+                return null;
+            }
+
+            $value = $operator === '+' ? $value + $right : $value - $right;
+        }
+
+        return $value;
+    }
+
+    private function parseMathTerm(array $tokens, int &$index): ?float
+    {
+        $value = $this->parseMathFactor($tokens, $index);
+
+        if ($value === null) {
+            return null;
+        }
+
+        while ($index < count($tokens) && in_array($tokens[$index], ['*', '/'], true)) {
+            $operator = $tokens[$index++];
+            $right = $this->parseMathFactor($tokens, $index);
+
+            if ($right === null) {
+                return null;
+            }
+
+            if ($operator === '/') {
+                if ((float) $right === 0.0) {
+                    return null;
+                }
+
+                $value /= $right;
+                continue;
+            }
+
+            $value *= $right;
+        }
+
+        return $value;
+    }
+
+    private function parseMathFactor(array $tokens, int &$index): ?float
+    {
+        if ($index >= count($tokens)) {
+            return null;
+        }
+
+        $token = $tokens[$index];
+
+        if ($token === '-') {
+            $index++;
+            $value = $this->parseMathFactor($tokens, $index);
+
+            return $value === null ? null : -$value;
+        }
+
+        if ($token === '+') {
+            $index++;
+
+            return $this->parseMathFactor($tokens, $index);
+        }
+
+        if ($token === '(') {
+            $index++;
+            $value = $this->parseMathExpression($tokens, $index);
+
+            if ($value === null || ($tokens[$index] ?? null) !== ')') {
+                return null;
+            }
+
+            $index++;
+
+            return $value;
+        }
+
+        if (is_numeric($token)) {
+            $index++;
+
+            return (float) $token;
+        }
+
+        return null;
     }
 }

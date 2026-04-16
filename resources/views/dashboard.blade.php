@@ -261,7 +261,8 @@
         }
 
         .page-shell {
-            max-width: 1280px;
+            width: 100%;
+            max-width: none;
         }
 
         .hero-card {
@@ -661,49 +662,6 @@
             }
         }
 
-        .chatbot-quick-label {
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: #7a8191;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .chatbot-quick-actions {
-            display: grid;
-            gap: 0.7rem;
-        }
-
-        .chatbot-chip {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.8rem;
-            border: 1px solid #f1ddd1;
-            background: #ffffff;
-            color: #232833;
-            border-radius: 18px;
-            padding: 0.95rem 1rem;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .chatbot-chip::after {
-            content: "\F285";
-            font-family: bootstrap-icons;
-            font-size: 0.85rem;
-            color: var(--brand-orange);
-        }
-
-        .chatbot-chip:hover {
-            transform: translateY(-1px);
-            border-color: rgba(255, 89, 0, 0.26);
-            box-shadow: 0 12px 24px -20px rgba(225, 79, 0, 0.26);
-        }
-
         .chatbot-footer {
             padding: 0.9rem 1rem 1.1rem;
             border-top: 1px solid #edf0f5;
@@ -1046,15 +1004,8 @@
         </main>
     </div>
     @php
-        $assistantTitle = in_array((int) ($user['level'] ?? 0), [1, 2], true) ? 'Customer Service' : 'Asisten Sistem';
-        $assistantSubtitle = 'Fast Respond, Powered By Ai';
-        $assistantQuickActions = match ((int) ($user['level'] ?? 0)) {
-            1 => ['Ajukan barang baru', 'Riwayat pengajuan'],
-            2 => ['Lihat pengajuan masuk', 'Bantuan verifikasi', 'Cek inventaris kelas'],
-            3 => ['Ringkasan persetujuan', 'Bantuan laporan', 'Statistik inventaris'],
-            4 => ['Kelola user', 'Realisasi pengajuan', 'Bantuan inventaris'],
-            default => ['Buka bantuan', 'Navigasi dashboard', 'Tanya sistem'],
-        };
+        $assistantTitle = 'Tutor AI Sekolah';
+        $assistantSubtitle = 'Belajar cepat, dibantu AI';
     @endphp
     <div class="chatbot-shell" id="chatbotShell">
 
@@ -1126,7 +1077,7 @@
             let chatbotBusy = false;
             let chatbotAiEnabled = false;
             let chatbotCooldownTimer = null;
-            const chatbotGreeting = "Halo {{ $user['nama'] }}, saya asisten AI InfraSPH. Saya siap membantu sesuai akses akunmu. Silakan tanya apa pun seputar inventaris, ruangan, pengajuan, atau penggunaan dashboard.";
+            const chatbotGreeting = "Halo {{ $user['nama'] }}, saya tutor AI sekolah di InfraSPH. Kamu bisa tanya matematika, sejarah, IPA, Bahasa Indonesia, dan pelajaran lain, atau minta bantuan fitur dashboard sesuai akses akunmu.";
 
             if (appShell && toggleButton && window.innerWidth > 860) {
                 toggleButton.addEventListener('click', function () {

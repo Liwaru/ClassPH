@@ -5,13 +5,13 @@ namespace App\Services;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class GeminiChatService
+class GroqChatService
 {
     private ?string $lastFailureReason = null;
 
     public function isConfigured(): bool
     {
-        return filled(config('services.gemini.api_key'));
+        return filled(config('services.groq.api_key'));
     }
 
     public function lastFailureReason(): ?string
@@ -32,62 +32,48 @@ class GeminiChatService
     ): ?string {
         if (! $this->isConfigured()) {
             $this->lastFailureReason = 'not_configured';
+
             return null;
         }
 
         $this->lastFailureReason = null;
 
-        $contents = [];
+        $messages = [
+            [
+                'role' => 'system',
+                'content' => $this->systemPrompt($context),
+            ],
+        ];
 
         foreach (array_slice($history, -8) as $item) {
             if (! in_array($item['role'] ?? '', ['user', 'assistant'], true) || blank($item['message'] ?? '')) {
                 continue;
             }
 
-            $contents[] = [
-                'role' => $item['role'] === 'assistant' ? 'model' : 'user',
-                'parts' => [
-                    ['text' => $item['message']],
-                ],
+            $messages[] = [
+                'role' => $item['role'],
+                'content' => $item['message'],
             ];
         }
 
-        $contents[] = [
+        $messages[] = [
             'role' => 'user',
-            'parts' => [
-                ['text' => $this->userPrompt($message, $intent, $groundedAnswer, $context)],
-            ],
+            'content' => $this->userPrompt($message, $intent, $groundedAnswer, $context),
         ];
 
-        $model = (string) config('services.gemini.model', 'gemini-2.0-flash');
-        $endpoint = rtrim((string) config('services.gemini.base_url'), '/').'/models/'.$model.':generateContent';
-        $originalProxyEnv = $this->suspendProxyEnvironment();
-
         try {
-            $response = Http::timeout((int) config('services.gemini.timeout', 20))
-                ->withOptions([
-                    'proxy' => '',
-                ])
+            $response = Http::timeout((int) config('services.groq.timeout', 20))
+                ->withToken((string) config('services.groq.api_key'))
                 ->acceptJson()
-                ->withHeaders([
-                    'x-goog-api-key' => (string) config('services.gemini.api_key'),
-                ])
-                ->post($endpoint, [
-                    'systemInstruction' => [
-                        'parts' => [
-                            ['text' => $this->systemPrompt($context)],
-                        ],
-                    ],
-                    'contents' => $contents,
-                    'generationConfig' => [
-                        'temperature' => 0.2,
-                        'maxOutputTokens' => 512,
-                    ],
+                ->post(rtrim((string) config('services.groq.base_url'), '/').'/chat/completions', [
+                    'model' => (string) config('services.groq.model', 'llama-3.1-8b-instant'),
+                    'messages' => $messages,
+                    'temperature' => 0.2,
                 ]);
 
             if (! $response->successful()) {
                 $this->lastFailureReason = $response->status() === 429 ? 'quota_exceeded' : 'request_failed';
-                Log::warning('Gemini chatbot request failed.', [
+                Log::warning('Groq chatbot request failed.', [
                     'status' => $response->status(),
                     'body' => $response->json(),
                 ]);
@@ -98,13 +84,11 @@ class GeminiChatService
             return $this->extractText($response->json());
         } catch (\Throwable $exception) {
             $this->lastFailureReason = 'connection_error';
-            Log::warning('Gemini chatbot request exception.', [
+            Log::warning('Groq chatbot request exception.', [
                 'message' => $exception->getMessage(),
             ]);
 
             return null;
-        } finally {
-            $this->restoreProxyEnvironment($originalProxyEnv);
         }
     }
 
@@ -170,51 +154,8 @@ class GeminiChatService
      */
     private function extractText(array $payload): ?string
     {
-        foreach (($payload['candidates'] ?? []) as $candidate) {
-            foreach (($candidate['content']['parts'] ?? []) as $part) {
-                $text = $part['text'] ?? null;
+        $text = $payload['choices'][0]['message']['content'] ?? null;
 
-                if (filled($text)) {
-                    return trim((string) $text);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @return array<string, string|false>
-     */
-    private function suspendProxyEnvironment(): array
-    {
-        $keys = ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy'];
-        $original = [];
-
-        foreach ($keys as $key) {
-            $original[$key] = getenv($key);
-            putenv($key);
-            unset($_ENV[$key], $_SERVER[$key]);
-        }
-
-        return $original;
-    }
-
-    /**
-     * @param  array<string, string|false>  $original
-     */
-    private function restoreProxyEnvironment(array $original): void
-    {
-        foreach ($original as $key => $value) {
-            if ($value === false) {
-                putenv($key);
-                unset($_ENV[$key], $_SERVER[$key]);
-                continue;
-            }
-
-            putenv($key.'='.$value);
-            $_ENV[$key] = $value;
-            $_SERVER[$key] = $value;
-        }
+        return filled($text) ? trim((string) $text) : null;
     }
 }
