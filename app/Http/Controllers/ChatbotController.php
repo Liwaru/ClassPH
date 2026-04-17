@@ -10,6 +10,7 @@ class ChatbotController extends Controller
 {
     private const HISTORY_SESSION_KEY = 'chatbot_history';
     private const LAST_MESSAGE_AT_SESSION_KEY = 'chatbot_last_message_at';
+    private const PENDING_INPUT_SESSION_KEY = 'chatbot_pending_input';
     private const COOLDOWN_SECONDS = 3;
 
     public function context(ChatbotAccessService $chatbotAccessService): JsonResponse
@@ -24,7 +25,10 @@ class ChatbotController extends Controller
             'message' => 'Konteks chatbot berhasil dimuat.',
             'data' => array_merge(
                 $chatbotAccessService->buildContext((array) session('user')),
-                ['history_count' => count((array) session(self::HISTORY_SESSION_KEY, []))]
+                [
+                    'history_count' => count((array) session(self::HISTORY_SESSION_KEY, [])),
+                    'pending_input' => session(self::PENDING_INPUT_SESSION_KEY),
+                ]
             ),
         ]);
     }
@@ -55,17 +59,38 @@ class ChatbotController extends Controller
 
         $validated = $request->validate([
             'message' => ['required', 'string', 'max:1000'],
+            'option_id' => ['nullable', 'string', 'max:120'],
         ], [
             'message.required' => 'Pesan chatbot wajib diisi.',
         ]);
 
         $history = (array) session(self::HISTORY_SESSION_KEY, []);
-        $responseData = $chatbotAccessService->respond((array) session('user'), $validated['message'], $history);
+        $pendingInput = (array) session(self::PENDING_INPUT_SESSION_KEY, []);
+        $optionId = $validated['option_id'] ?? null;
+
+        if (filled($optionId)) {
+            session()->forget(self::PENDING_INPUT_SESSION_KEY);
+        }
+
+        $responseData = $pendingInput !== [] && blank($optionId)
+            ? $chatbotAccessService->submitPendingInput((array) session('user'), $validated['message'], $pendingInput)
+            : $chatbotAccessService->respond(
+                (array) session('user'),
+                $validated['message'],
+                $history,
+                $optionId
+            );
 
         $updatedHistory = array_slice(array_merge($history, [
             ['role' => 'user', 'message' => $validated['message']],
             ['role' => 'assistant', 'message' => (string) ($responseData['message'] ?? '')],
         ]), -10);
+
+        if (! empty($responseData['pending_input'])) {
+            session([self::PENDING_INPUT_SESSION_KEY => $responseData['pending_input']]);
+        } else {
+            session()->forget(self::PENDING_INPUT_SESSION_KEY);
+        }
 
         session([
             self::HISTORY_SESSION_KEY => $updatedHistory,
@@ -88,6 +113,7 @@ class ChatbotController extends Controller
 
         session()->forget(self::HISTORY_SESSION_KEY);
         session()->forget(self::LAST_MESSAGE_AT_SESSION_KEY);
+        session()->forget(self::PENDING_INPUT_SESSION_KEY);
 
         return response()->json([
             'message' => 'Percakapan chatbot berhasil direset.',

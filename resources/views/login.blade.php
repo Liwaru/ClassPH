@@ -443,7 +443,6 @@
                 <label class="checkbox-label">
                     <input type="checkbox" name="remember" id="remember"> Ingat saya
                 </label>
-                <a href="#" class="forgot-link" aria-disabled="true">Lupa password?</a>
             </div>
 
             <button type="submit" class="login-btn" id="loginSubmitBtn">

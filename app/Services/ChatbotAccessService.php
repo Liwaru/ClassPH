@@ -9,7 +9,6 @@ use Illuminate\Support\Facades\Schema;
 class ChatbotAccessService
 {
     public function __construct(
-        private GroqChatService $groqChatService,
         private GeminiChatService $geminiChatService
     ) {
     }
@@ -81,6 +80,29 @@ class ChatbotAccessService
                 ])->all(),
                 'scope_summary' => $this->scopeSummary((int) $user->level, $roomNames, $user->kelas ?? null),
             ],
+            'assistant' => $this->buildAssistantBootstrap([
+                'user' => [
+                    'id_user' => (int) $user->id_user,
+                    'nis' => $user->nis,
+                    'nama' => $user->nama,
+                    'kelas' => $user->kelas ?? null,
+                ],
+                'role' => $role,
+                'permissions' => $this->permissionsForLevel((int) $user->level),
+                'scope' => [
+                    'assigned_room_ids' => $roomIds,
+                    'assigned_room_names' => $roomNames,
+                    'assigned_room_codes' => $roomCodes,
+                    'assigned_rooms' => $assignments->map(fn ($assignment) => [
+                        'id_ruangan' => (int) $assignment->id_ruangan,
+                        'kode_ruangan' => $assignment->kode_ruangan,
+                        'nama_ruangan' => $assignment->nama_ruangan,
+                        'jenis_ruangan' => $assignment->jenis_ruangan,
+                        'peran_ruangan' => $assignment->peran_ruangan,
+                    ])->all(),
+                    'scope_summary' => $this->scopeSummary((int) $user->level, $roomNames, $user->kelas ?? null),
+                ],
+            ]),
         ];
     }
 
@@ -91,9 +113,20 @@ class ChatbotAccessService
      * @param  array<int, array{role: string, message: string}>  $history
      * @return array<string, mixed>
      */
-    public function respond(array $sessionUser, string $message, array $history = []): array
+    public function respond(array $sessionUser, string $message, array $history = [], ?string $optionId = null): array
     {
         $context = $this->buildContext($sessionUser);
+
+        if (filled($optionId)) {
+            return $this->respondToOption($context, (string) $optionId);
+        }
+
+        $matchedOption = $this->matchOptionFromText($context, $message);
+
+        if ($matchedOption !== null) {
+            return $this->respondToOption($context, $matchedOption);
+        }
+
         $intent = $this->detectIntent($message);
         $decision = $this->authorizeIntent($context, $intent, $message);
 
@@ -104,8 +137,10 @@ class ChatbotAccessService
                 'allowed' => false,
                 'context' => $context,
                 'grounded_message' => $decision['message'],
+                'options' => $this->rootOptionsForContext($context),
+                'option_style' => 'grid',
                 'ai' => [
-                    'enabled' => $this->aiEnabled(),
+                    'enabled' => false,
                     'used' => false,
                     'fallback_reason' => 'access_denied',
                 ],
@@ -113,82 +148,772 @@ class ChatbotAccessService
         }
 
         $groundedAnswer = $this->buildAnswer($context, $intent, $message);
-        $finalMessage = $groundedAnswer;
-        $aiUsed = false;
-        $fallbackReason = null;
-
-        if ($this->aiEnabled()) {
-            $aiReply = null;
-
-            if ($this->groqChatService->isConfigured()) {
-                $aiReply = $this->groqChatService->generateReply($message, $context, $intent, $groundedAnswer, $history);
-
-                if (filled($aiReply)) {
-                    $finalMessage = $aiReply;
-                    $aiUsed = true;
-                } else {
-                    $fallbackReason = $this->groqChatService->lastFailureReason() ?? 'ai_unavailable';
-                }
-            }
-
-            if (! $aiUsed && $this->geminiChatService->isConfigured()) {
-                $aiReply = $this->geminiChatService->generateReply($message, $context, $intent, $groundedAnswer, $history);
-
-                if (filled($aiReply)) {
-                    $finalMessage = $aiReply;
-                    $aiUsed = true;
-                    $fallbackReason = null;
-                } else {
-                    $fallbackReason = $this->geminiChatService->lastFailureReason() ?? $fallbackReason ?? 'ai_unavailable';
-                }
-            }
-
-            if (! $aiUsed) {
-                $finalMessage = $this->buildFallbackMessage($groundedAnswer, $intent, $fallbackReason);
-            }
-        } else {
-            $fallbackReason = 'ai_not_configured';
-            $finalMessage = $this->buildFallbackMessage($groundedAnswer, $intent, $fallbackReason);
-        }
+        $menuSuggestion = $this->menuSuggestionForIntent($context, $intent);
 
         return [
-            'message' => $finalMessage,
+            'message' => $groundedAnswer,
             'intent' => $intent,
             'allowed' => true,
             'context' => $context,
             'grounded_message' => $groundedAnswer,
+            'options' => $menuSuggestion['options'],
+            'option_style' => $menuSuggestion['style'],
             'ai' => [
-                'enabled' => $this->aiEnabled(),
-                'used' => $aiUsed,
-                'fallback_reason' => $fallbackReason,
+                'enabled' => false,
+                'used' => false,
+                'fallback_reason' => 'guided_mode',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $sessionUser
+     * @param  array<string, mixed>  $pendingInput
+     * @return array<string, mixed>
+     */
+    public function submitPendingInput(array $sessionUser, string $message, array $pendingInput): array
+    {
+        $context = $this->buildContext($sessionUser);
+        $trimmedMessage = trim($message);
+
+        if (($pendingInput['mode'] ?? null) !== 'issue_report') {
+            return $this->respond($sessionUser, $message);
+        }
+
+        $targetUserId = DB::table('users')
+            ->where('level', 3)
+            ->orderBy('id_user')
+            ->value('id_user');
+
+        DB::table('laporan_chatbot')->insert([
+            'id_user_pelapor' => (int) ($context['user']['id_user'] ?? 0),
+            'id_user_tujuan' => $targetUserId ? (int) $targetUserId : null,
+            'topik' => (string) ($pendingInput['topic'] ?? 'Lainnya'),
+            'pesan' => $trimmedMessage,
+            'status' => 'baru',
+            'dibuat_pada' => now(),
+        ]);
+
+        $reply = 'Masalahmu sudah saya teruskan ke pengelola sistem. Mohon tunggu tindak lanjut berikutnya.';
+
+        return [
+            'message' => $reply,
+            'intent' => 'issue_report_submitted',
+            'allowed' => true,
+            'context' => $context,
+            'grounded_message' => $reply,
+            'options' => $this->rootOptionsForContext($context),
+            'option_style' => 'grid',
+            'pending_input' => null,
+            'ai' => [
+                'enabled' => false,
+                'used' => false,
+                'fallback_reason' => 'guided_mode',
             ],
         ];
     }
 
     public function aiEnabled(): bool
     {
-        return $this->groqChatService->isConfigured() || $this->geminiChatService->isConfigured();
+        return false;
     }
 
-    private function buildFallbackMessage(string $groundedAnswer, string $intent, ?string $fallbackReason): string
+    private function buildFallbackMessage(string $groundedAnswer, ?string $fallbackReason): string
     {
-        if ($fallbackReason === 'quota_exceeded') {
-            return 'Layanan AI sedang tidak bisa dipakai karena kuota Gemini API habis. Percakapan masih tersimpan di sesi ini, tetapi jawaban pintar baru akan normal lagi setelah API key atau kuota Gemini diperbaiki.';
-        }
-
-        if ($fallbackReason === 'ai_not_configured' || $fallbackReason === 'not_configured') {
-            return 'Layanan AI belum terkonfigurasi dengan benar. Setelah API key valid dipasang, chatbot bisa menjawab lebih natural dan mengingat konteks percakapan sesi ini.';
-        }
-
-        if (in_array($fallbackReason, ['connection_error', 'request_failed'], true)) {
-            return 'Layanan AI sedang bermasalah saat dihubungi. Coba lagi sebentar lagi.';
-        }
-
-        if (in_array($intent, ['conversation', 'general_help', 'unclear_text'], true)) {
-            return 'Saya siap menanggapi pesanmu. Coba lanjutkan atau tulis sedikit lebih jelas, nanti saya jawab dengan lebih pas.';
-        }
-
         return $groundedAnswer;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function buildAssistantBootstrap(array $context): array
+    {
+        return [
+            'initial_message' => 'Halo, '.$context['user']['nama'].'. Saya siap membantu. Pilih jenis bantuan yang anda butuhkan.',
+            'initial_options' => $this->rootOptionsForContext($context),
+            'initial_option_style' => 'grid',
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<int, array<string, string>>
+     */
+    private function rootOptionsForContext(array $context): array
+    {
+        $level = (int) ($context['role']['level'] ?? 0);
+
+        return match ($level) {
+            1 => [
+                $this->option('kelas_saya', 'Kelas Saya', 'bi bi-door-open-fill'),
+                $this->option('inventaris_saya', 'Inventaris Kelas', 'bi bi-box-seam-fill'),
+                $this->option('pengajuan_saya', 'Pengajuan', 'bi bi-send-check-fill'),
+                $this->option('bantuan_dashboard', 'Penggunaan Dashboard', 'bi bi-grid-1x2-fill'),
+                $this->option('akun_saya', 'Akun', 'bi bi-person-fill'),
+                $this->option('masalah_data', 'Masalah Data', 'bi bi-exclamation-diamond-fill'),
+            ],
+            2 => [
+                $this->option('kelas_binaan', 'Kelas Binaan', 'bi bi-building'),
+                $this->option('inventaris_kelas', 'Inventaris Kelas', 'bi bi-box-seam-fill'),
+                $this->option('pengajuan_kelas', 'Pengajuan Masuk', 'bi bi-inbox-fill'),
+                $this->option('verifikasi', 'Verifikasi', 'bi bi-patch-check-fill'),
+                $this->option('akses_akun', 'Batas Akses', 'bi bi-shield-lock-fill'),
+                $this->option('lainnya', 'Lainnya', 'bi bi-three-dots'),
+            ],
+            3 => [
+                $this->option('data_user', 'Data User', 'bi bi-people-fill'),
+                $this->option('data_ruangan', 'Data Ruangan', 'bi bi-building-fill'),
+                $this->option('data_barang', 'Data Barang', 'bi bi-grid-fill'),
+                $this->option('inventaris_global', 'Inventaris', 'bi bi-box-seam-fill'),
+                $this->option('pengajuan_global', 'Pengajuan', 'bi bi-list-check'),
+                $this->option('sistem', 'Sistem', 'bi bi-robot'),
+            ],
+            4 => [
+                $this->option('ruangan_owner', 'Semua Ruangan', 'bi bi-buildings-fill'),
+                $this->option('inventaris_owner', 'Inventaris Sekolah', 'bi bi-boxes'),
+                $this->option('persetujuan_owner', 'Persetujuan Akhir', 'bi bi-clipboard2-check-fill'),
+                $this->option('laporan_owner', 'Laporan', 'bi bi-bar-chart-fill'),
+                $this->option('akses_owner', 'Batas Akses', 'bi bi-shield-lock-fill'),
+                $this->option('lainnya', 'Lainnya', 'bi bi-three-dots'),
+            ],
+            default => [
+                $this->option('__root', 'Bantuan', 'bi bi-chat-dots-fill'),
+            ],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function respondToOption(array $context, string $optionId): array
+    {
+        if ($optionId === '__root') {
+            $bootstrap = $this->buildAssistantBootstrap($context);
+
+            return [
+                'message' => $bootstrap['initial_message'],
+                'intent' => 'guided_root',
+                'allowed' => true,
+                'context' => $context,
+                'grounded_message' => $bootstrap['initial_message'],
+                'options' => $bootstrap['initial_options'],
+                'option_style' => $bootstrap['initial_option_style'],
+                'ai' => [
+                    'enabled' => false,
+                    'used' => false,
+                    'fallback_reason' => 'guided_mode',
+                ],
+            ];
+        }
+
+        $tree = $this->guidedTreeForContext($context);
+        $resolved = $this->resolveGuidedNode($tree, $optionId);
+
+        if ($resolved === null) {
+            $bootstrap = $this->buildAssistantBootstrap($context);
+
+            return [
+                'message' => 'Pilihan bantuan itu belum tersedia. Silakan pilih salah satu topik di bawah ini.',
+                'intent' => 'guided_fallback',
+                'allowed' => true,
+                'context' => $context,
+                'grounded_message' => 'Pilihan bantuan itu belum tersedia. Silakan pilih salah satu topik di bawah ini.',
+                'options' => $bootstrap['initial_options'],
+                'option_style' => $bootstrap['initial_option_style'],
+                'ai' => [
+                    'enabled' => false,
+                    'used' => false,
+                    'fallback_reason' => 'guided_mode',
+                ],
+            ];
+        }
+
+        $node = $resolved['node'];
+        $children = $node['children'] ?? [];
+
+        if ($children !== []) {
+            $options = $this->formatOptions($children);
+            $options[] = $this->option('__root', 'Kembali ke menu utama', 'bi bi-house-door-fill');
+
+            return [
+                'message' => $node['message'] ?? ('Pilih bantuan yang ingin kamu lanjutkan untuk "'.$node['label'].'".'),
+                'intent' => 'guided_branch',
+                'allowed' => true,
+                'context' => $context,
+                'grounded_message' => $node['message'] ?? ('Pilih bantuan yang ingin kamu lanjutkan untuk "'.$node['label'].'".'),
+                'options' => $options,
+                'option_style' => 'list',
+                'ai' => [
+                    'enabled' => false,
+                    'used' => false,
+                    'fallback_reason' => 'guided_mode',
+                ],
+            ];
+        }
+
+        $reply = $this->buildGuidedLeafAnswer($context, (string) ($node['answer_key'] ?? 'help_navigation'));
+        $pendingInput = null;
+
+        if (isset($node['input_mode'])) {
+            $pendingInput = [
+                'mode' => (string) $node['input_mode'],
+                'topic' => (string) ($node['input_topic'] ?? $node['label']),
+                'placeholder' => (string) ($node['input_placeholder'] ?? 'Tulis masalahmu di sini...'),
+            ];
+        }
+
+        $siblingOptions = $pendingInput !== null
+            ? []
+            : ($resolved['siblings'] !== []
+                ? $this->formatOptions($resolved['siblings'])
+                : $this->rootOptionsForContext($context));
+
+        $siblingOptions[] = $this->option('__root', 'Kembali ke menu utama', 'bi bi-house-door-fill');
+
+        return [
+            'message' => $reply,
+            'intent' => 'guided_leaf',
+            'allowed' => true,
+            'context' => $context,
+            'grounded_message' => $reply,
+            'options' => $siblingOptions,
+            'option_style' => 'list',
+            'pending_input' => $pendingInput,
+            'ai' => [
+                'enabled' => false,
+                'used' => false,
+                'fallback_reason' => 'guided_mode',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<int, array<string, mixed>>
+     */
+    private function guidedTreeForContext(array $context): array
+    {
+        $level = (int) ($context['role']['level'] ?? 0);
+
+        return match ($level) {
+            1 => [
+                [
+                    'id' => 'kelas_saya',
+                    'label' => 'Kelas Saya',
+                    'message' => 'Berikut bantuan yang tersedia untuk kelas dan ruanganmu.',
+                    'children' => [
+                        ['id' => 'kelas_saya_info', 'label' => 'Data kelas saya', 'answer_key' => 'room_lookup'],
+                        ['id' => 'kelas_saya_barang', 'label' => 'Lihat barang di kelas saya', 'answer_key' => 'inventory_detail'],
+                        ['id' => 'kelas_saya_akses', 'label' => 'Apa saja akses saya', 'answer_key' => 'scope_info'],
+                    ],
+                ],
+                [
+                    'id' => 'inventaris_saya',
+                    'label' => 'Inventaris Kelas',
+                    'message' => 'Pilih bantuan inventaris yang ingin kamu lihat.',
+                    'children' => [
+                        ['id' => 'inventaris_saya_ringkasan', 'label' => 'Ringkasan inventaris', 'answer_key' => 'inventory_summary'],
+                        ['id' => 'inventaris_saya_detail', 'label' => 'Semua barang di kelas saya', 'answer_key' => 'inventory_detail'],
+                    ],
+                ],
+                [
+                    'id' => 'pengajuan_saya',
+                    'label' => 'Pengajuan',
+                    'message' => 'Pilih bantuan terkait pengajuanmu.',
+                    'children' => [
+                        ['id' => 'pengajuan_saya_status', 'label' => 'Status pengajuan saya', 'answer_key' => 'request_lookup'],
+                        ['id' => 'pengajuan_saya_ajukan', 'label' => 'Cara ajukan barang', 'answer_key' => 'request_create_help'],
+                        ['id' => 'pengajuan_saya_riwayat', 'label' => 'Cara lihat riwayat pengajuan', 'answer_key' => 'request_history_help'],
+                    ],
+                ],
+                [
+                    'id' => 'bantuan_dashboard',
+                    'label' => 'Penggunaan Dashboard',
+                    'message' => 'Pilih panduan dashboard yang ingin kamu buka.',
+                    'children' => [
+                        ['id' => 'dashboard_menu', 'label' => 'Menu yang tersedia', 'answer_key' => 'available_menus'],
+                        ['id' => 'dashboard_cara', 'label' => 'Cara memakai dashboard', 'answer_key' => 'help_navigation'],
+                    ],
+                ],
+                [
+                    'id' => 'akun_saya',
+                    'label' => 'Akun',
+                    'message' => 'Pilih bantuan terkait akunmu.',
+                    'children' => [
+                        ['id' => 'akun_saya_lupa_password', 'label' => 'Lupa password', 'answer_key' => 'forgot_password_help'],
+                        [
+                            'id' => 'akun_saya_lainnya',
+                            'label' => 'Lainnya',
+                            'answer_key' => 'custom_issue_prompt',
+                            'input_mode' => 'issue_report',
+                            'input_topic' => 'Akun',
+                            'input_placeholder' => 'Tulis masalah akunmu di sini...',
+                        ],
+                    ],
+                ],
+                [
+                    'id' => 'masalah_data',
+                    'label' => 'Masalah Data',
+                    'message' => 'Pilih jenis masalah data yang sedang kamu alami.',
+                    'children' => [
+                        ['id' => 'masalah_data_jumlah', 'label' => 'Jumlah barang tidak sesuai', 'answer_key' => 'inventory_count_issue_help'],
+                        ['id' => 'masalah_data_tidak_muncul', 'label' => 'Data tidak muncul', 'answer_key' => 'data_missing_help'],
+                        ['id' => 'masalah_data_salah', 'label' => 'Data salah', 'answer_key' => 'data_incorrect_help'],
+                        ['id' => 'masalah_data_barang_tidak_tercatat', 'label' => 'Barang tidak tercatat', 'answer_key' => 'inventory_unlisted_help'],
+                    ],
+                ],
+            ],
+            2 => [
+                [
+                    'id' => 'kelas_binaan',
+                    'label' => 'Kelas Binaan',
+                    'message' => 'Berikut bantuan yang tersedia untuk kelas binaanmu.',
+                    'children' => [
+                        ['id' => 'kelas_binaan_info', 'label' => 'Data kelas binaan saya', 'answer_key' => 'room_lookup'],
+                        ['id' => 'kelas_binaan_barang', 'label' => 'Semua barang di kelas binaan', 'answer_key' => 'inventory_detail'],
+                        ['id' => 'kelas_binaan_akses', 'label' => 'Batas akses saya', 'answer_key' => 'scope_info'],
+                    ],
+                ],
+                [
+                    'id' => 'inventaris_kelas',
+                    'label' => 'Inventaris Kelas',
+                    'message' => 'Pilih bantuan inventaris kelas yang ingin dilihat.',
+                    'children' => [
+                        ['id' => 'inventaris_kelas_ringkasan', 'label' => 'Ringkasan inventaris kelas', 'answer_key' => 'inventory_summary'],
+                        ['id' => 'inventaris_kelas_detail', 'label' => 'Detail barang kelas', 'answer_key' => 'inventory_detail'],
+                    ],
+                ],
+                [
+                    'id' => 'pengajuan_kelas',
+                    'label' => 'Pengajuan Masuk',
+                    'message' => 'Pilih informasi pengajuan yang ingin kamu lihat.',
+                    'children' => [
+                        ['id' => 'pengajuan_kelas_status', 'label' => 'Ringkasan pengajuan masuk', 'answer_key' => 'request_lookup'],
+                        ['id' => 'pengajuan_kelas_riwayat', 'label' => 'Cara lihat riwayat verifikasi', 'answer_key' => 'verification_history_help'],
+                    ],
+                ],
+                [
+                    'id' => 'verifikasi',
+                    'label' => 'Verifikasi',
+                    'message' => 'Pilih panduan verifikasi yang ingin kamu buka.',
+                    'children' => [
+                        ['id' => 'verifikasi_cara', 'label' => 'Cara verifikasi pengajuan', 'answer_key' => 'verification_help'],
+                        ['id' => 'verifikasi_batas', 'label' => 'Yang bisa saya verifikasi', 'answer_key' => 'restricted_scope'],
+                    ],
+                ],
+                [
+                    'id' => 'akses_akun',
+                    'label' => 'Batas Akses',
+                    'message' => 'Pilih informasi akses akun wali kelas.',
+                    'children' => [
+                        ['id' => 'akses_akun_info', 'label' => 'Batas akses saya', 'answer_key' => 'scope_info'],
+                        ['id' => 'akses_akun_larangan', 'label' => 'Yang tidak bisa saya buka', 'answer_key' => 'restricted_scope'],
+                    ],
+                ],
+                [
+                    'id' => 'lainnya',
+                    'label' => 'Lainnya',
+                    'message' => 'Pilih bantuan tambahan yang tersedia.',
+                    'children' => [
+                        ['id' => 'lainnya_akses', 'label' => 'Jika akses belum sesuai', 'answer_key' => 'contact_support'],
+                        ['id' => 'lainnya_rules', 'label' => 'Aturan chatbot ini', 'answer_key' => 'chatbot_rules'],
+                    ],
+                ],
+            ],
+            3 => [
+                [
+                    'id' => 'data_user',
+                    'label' => 'Data User',
+                    'message' => 'Pilih bantuan terkait data user.',
+                    'children' => [
+                        ['id' => 'data_user_ringkasan', 'label' => 'Ringkasan data user', 'answer_key' => 'global_users'],
+                        ['id' => 'data_user_aksi', 'label' => 'Perintah kelola user', 'answer_key' => 'system_manager_user_help'],
+                    ],
+                ],
+                [
+                    'id' => 'data_ruangan',
+                    'label' => 'Data Ruangan',
+                    'message' => 'Pilih bantuan terkait data ruangan.',
+                    'children' => [
+                        ['id' => 'data_ruangan_ringkasan', 'label' => 'Ringkasan ruangan', 'answer_key' => 'global_rooms'],
+                    ],
+                ],
+                [
+                    'id' => 'data_barang',
+                    'label' => 'Data Barang',
+                    'message' => 'Pilih bantuan terkait data barang.',
+                    'children' => [
+                        ['id' => 'data_barang_ringkasan', 'label' => 'Ringkasan data barang', 'answer_key' => 'global_items'],
+                    ],
+                ],
+                [
+                    'id' => 'inventaris_global',
+                    'label' => 'Inventaris',
+                    'message' => 'Pilih bantuan terkait inventaris sekolah.',
+                    'children' => [
+                        ['id' => 'inventaris_global_ringkasan', 'label' => 'Ringkasan inventaris sekolah', 'answer_key' => 'global_inventory'],
+                    ],
+                ],
+                [
+                    'id' => 'pengajuan_global',
+                    'label' => 'Pengajuan',
+                    'message' => 'Pilih bantuan terkait pengajuan sistem.',
+                    'children' => [
+                        ['id' => 'pengajuan_global_ringkasan', 'label' => 'Ringkasan pengajuan', 'answer_key' => 'global_requests'],
+                    ],
+                ],
+                [
+                    'id' => 'sistem',
+                    'label' => 'Sistem',
+                    'message' => 'Pilih bantuan terkait sistem dan hak pengelola sistem.',
+                    'children' => [
+                        ['id' => 'sistem_hak', 'label' => 'Hak akses pengelola sistem', 'answer_key' => 'system_scope'],
+                        ['id' => 'sistem_rules', 'label' => 'Aturan chatbot ini', 'answer_key' => 'chatbot_rules'],
+                    ],
+                ],
+            ],
+            4 => [
+                [
+                    'id' => 'ruangan_owner',
+                    'label' => 'Semua Ruangan',
+                    'message' => 'Pilih bantuan terkait data ruangan sekolah.',
+                    'children' => [
+                        ['id' => 'ruangan_owner_ringkasan', 'label' => 'Ringkasan semua ruangan', 'answer_key' => 'global_rooms'],
+                    ],
+                ],
+                [
+                    'id' => 'inventaris_owner',
+                    'label' => 'Inventaris Sekolah',
+                    'message' => 'Pilih bantuan terkait inventaris sekolah.',
+                    'children' => [
+                        ['id' => 'inventaris_owner_ringkasan', 'label' => 'Ringkasan inventaris sekolah', 'answer_key' => 'global_inventory'],
+                    ],
+                ],
+                [
+                    'id' => 'persetujuan_owner',
+                    'label' => 'Persetujuan Akhir',
+                    'message' => 'Pilih bantuan terkait persetujuan akhir.',
+                    'children' => [
+                        ['id' => 'persetujuan_owner_ringkasan', 'label' => 'Ringkasan pengajuan', 'answer_key' => 'global_requests'],
+                        ['id' => 'persetujuan_owner_batas', 'label' => 'Batas akses owner', 'answer_key' => 'owner_scope'],
+                    ],
+                ],
+                [
+                    'id' => 'laporan_owner',
+                    'label' => 'Laporan',
+                    'message' => 'Pilih bantuan laporan yang ingin kamu lihat.',
+                    'children' => [
+                        ['id' => 'laporan_owner_ringkasan', 'label' => 'Ringkasan laporan sekolah', 'answer_key' => 'reports_help'],
+                    ],
+                ],
+                [
+                    'id' => 'akses_owner',
+                    'label' => 'Batas Akses',
+                    'message' => 'Pilih informasi batas akses owner.',
+                    'children' => [
+                        ['id' => 'akses_owner_info', 'label' => 'Yang bisa saya lihat', 'answer_key' => 'owner_scope'],
+                        ['id' => 'akses_owner_larangan', 'label' => 'Yang tidak bisa saya ubah', 'answer_key' => 'restricted_scope'],
+                    ],
+                ],
+                [
+                    'id' => 'lainnya',
+                    'label' => 'Lainnya',
+                    'message' => 'Pilih bantuan tambahan yang tersedia.',
+                    'children' => [
+                        ['id' => 'lainnya_rules', 'label' => 'Aturan chatbot ini', 'answer_key' => 'chatbot_rules'],
+                    ],
+                ],
+            ],
+            default => [],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>|null
+     */
+    private function resolveGuidedNode(array $tree, string $optionId, array $parentChildren = []): ?array
+    {
+        foreach ($tree as $node) {
+            if (($node['id'] ?? null) === $optionId) {
+                return [
+                    'node' => $node,
+                    'siblings' => array_values(array_filter($parentChildren, fn ($item) => ($item['id'] ?? null) !== $optionId)),
+                ];
+            }
+
+            $children = $node['children'] ?? [];
+
+            if ($children !== []) {
+                $resolved = $this->resolveGuidedNode($children, $optionId, $children);
+
+                if ($resolved !== null) {
+                    return $resolved;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function matchOptionFromText(array $context, string $message): ?string
+    {
+        $text = mb_strtolower(trim($message));
+
+        if ($text === '') {
+            return null;
+        }
+
+        foreach ($this->flattenGuidedTree($this->guidedTreeForContext($context)) as $node) {
+            $label = mb_strtolower((string) ($node['label'] ?? ''));
+
+            if ($label !== '' && $text === $label) {
+                return (string) $node['id'];
+            }
+        }
+
+        return match (true) {
+            $this->containsAny($text, ['jumlah barang tidak sesuai', 'data tidak muncul', 'data salah', 'barang tidak tercatat', 'data beda', 'data kursi beda', 'tidak sesuai'])
+                || (
+                    $this->containsAny($text, ['beda', 'salah', 'tidak sesuai'])
+                    && $this->containsAny($text, ['data', 'barang', 'kursi', 'inventaris'])
+                ) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'masalah_data',
+                default => null,
+            },
+            $this->containsAny($text, ['kelas saya', 'kelas binaan']) => in_array((int) ($context['role']['level'] ?? 0), [1, 2], true)
+                ? ((int) ($context['role']['level'] ?? 0) === 1 ? 'kelas_saya' : 'kelas_binaan')
+                : null,
+            $this->containsAny($text, ['akses akun', 'lupa password', 'akun']) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'akun_saya',
+                default => null,
+            },
+            $this->containsAny($text, ['inventaris', 'barang']) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'inventaris_saya',
+                2 => 'inventaris_kelas',
+                3 => 'inventaris_global',
+                4 => 'inventaris_owner',
+                default => null,
+            },
+            $this->containsAny($text, ['pengajuan', 'permintaan']) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'pengajuan_saya',
+                2 => 'pengajuan_kelas',
+                3 => 'pengajuan_global',
+                4 => 'persetujuan_owner',
+                default => null,
+            },
+            $this->containsAny($text, ['ajukan', 'pengajuan', 'permintaan', 'status pengajuan']) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'pengajuan_saya',
+                2 => 'pengajuan_kelas',
+                3 => 'pengajuan_global',
+                4 => 'persetujuan_owner',
+                default => null,
+            },
+            $this->containsAny($text, ['masalah data']) => match ((int) ($context['role']['level'] ?? 0)) {
+                1 => 'masalah_data',
+                default => null,
+            },
+            $this->containsAny($text, ['menu', 'dashboard', 'bantuan']) => in_array((int) ($context['role']['level'] ?? 0), [1, 2], true)
+                ? (((int) ($context['role']['level'] ?? 0) === 1) ? 'bantuan_dashboard' : 'verifikasi')
+                : 'sistem',
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $tree
+     * @return array<int, array<string, mixed>>
+     */
+    private function flattenGuidedTree(array $tree): array
+    {
+        $flat = [];
+
+        foreach ($tree as $node) {
+            $flat[] = $node;
+
+            if (($node['children'] ?? []) !== []) {
+                $flat = array_merge($flat, $this->flattenGuidedTree($node['children']));
+            }
+        }
+
+        return $flat;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{options: array<int, array<string, string>>, style: string}
+     */
+    private function menuSuggestionForIntent(array $context, string $intent): array
+    {
+        return match ($intent) {
+            'room_lookup' => [
+                'options' => $this->formatOptionsFromIds($context, ['kelas_saya', 'kelas_binaan', '__root']),
+                'style' => 'list',
+            ],
+            'inventory_lookup' => [
+                'options' => $this->formatOptionsFromIds($context, ['inventaris_saya', 'inventaris_kelas', 'inventaris_global', 'inventaris_owner', '__root']),
+                'style' => 'list',
+            ],
+            'request_lookup' => [
+                'options' => $this->formatOptionsFromIds($context, ['pengajuan_saya', 'pengajuan_kelas', 'pengajuan_global', 'persetujuan_owner', '__root']),
+                'style' => 'list',
+            ],
+            default => [
+                'options' => $this->rootOptionsForContext($context),
+                'style' => 'grid',
+            ],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function buildGuidedLeafAnswer(array $context, string $answerKey): string
+    {
+        return match ($answerKey) {
+            'room_lookup' => $this->buildRoomAnswer($context),
+            'inventory_summary' => $this->buildInventoryAnswer($context, 'inventaris'),
+            'inventory_detail' => $this->buildInventoryAnswer($context, 'semua data barang di kelas saya'),
+            'request_lookup' => $this->buildRequestAnswer($context),
+            'scope_info' => $context['scope']['scope_summary'] ?? 'Akses akun ini mengikuti role dan penugasan yang aktif.',
+            'restricted_scope' => $this->buildRestrictedScopeAnswer($context),
+            'request_create_help' => 'Untuk mengajukan barang baru, buka menu '.$this->formatMenuName('Ajukan Permintaan').', lalu isi jenis kebutuhan, jumlah, dan keterangan yang diperlukan.',
+            'request_history_help' => 'Untuk melihat riwayat pengajuan, buka menu '.$this->formatMenuName('Riwayat Pengajuan').'. Di sana kamu bisa melihat status pengajuan yang pernah dibuat.',
+            'forgot_password_help' => 'Jika kamu lupa password, silakan hubungi wali kelas agar password akunmu dapat direset dengan aman.',
+            'custom_issue_prompt' => 'Silakan tulis masalah akunmu di kolom input di bawah. Jika kendalanya tidak ada di pilihan yang tersedia, saya akan teruskan ke pengelola sistem.',
+            'custom_general_issue_prompt' => 'Silakan tulis masalahmu di kolom input di bawah. Pesanmu akan saya teruskan ke pengelola sistem untuk ditindaklanjuti.',
+            'inventory_count_issue_help' => 'Jika jumlah barang tidak sesuai, cocokan dulu data inventaris dengan kondisi fisik di kelasmu. Setelah itu laporkan ke wali kelas agar datanya bisa diperiksa.',
+            'data_missing_help' => 'Jika data tidak muncul, pastikan kamu membuka menu dan kelas yang sesuai dengan akunmu. Jika masih belum terlihat, hubungi wali kelas untuk pengecekan lanjutan.',
+            'data_incorrect_help' => 'Jika ada data yang salah, catat bagian yang keliru lalu laporkan ke wali kelas agar bisa diperbarui sesuai kondisi yang benar.',
+            'inventory_unlisted_help' => 'Jika ada barang yang belum tercatat, siapkan nama barang dan keterangan singkatnya lalu hubungi wali kelas agar data inventaris bisa diteruskan untuk ditambahkan.',
+            'verification_help' => 'Untuk verifikasi pengajuan, buka menu '.$this->formatMenuName('Pengajuan Masuk').', cek detail permintaan, lalu lanjutkan proses sesuai status yang tersedia.',
+            'verification_history_help' => 'Untuk melihat riwayat verifikasi, buka menu '.$this->formatMenuName('Riwayat Verifikasi').' atau halaman pengajuan yang sudah diproses.',
+            'available_menus' => $this->buildAvailableMenuAnswer($context),
+            'help_navigation' => $this->buildHelpAnswer($context),
+            'contact_support' => 'Jika akses kelas atau data belum sesuai, silakan hubungi wali kelas atau pengelola sistem agar hak akses akunmu dapat diperiksa.',
+            'chatbot_rules' => 'Chatbot ini memakai alur bantuan bertingkat. Kamu bisa memilih kategori yang tersedia atau mengetik pertanyaan sendiri, lalu saya akan cocokkan ke topik yang paling dekat.',
+            'global_users' => $this->buildGlobalReadAnswer($context, 'semua user'),
+            'global_rooms' => $this->buildGlobalReadAnswer($context, 'semua ruangan'),
+            'global_items' => $this->buildGlobalItemAnswer(),
+            'global_inventory' => $this->buildGlobalReadAnswer($context, 'semua inventaris'),
+            'global_requests' => $this->buildRequestAnswer($context),
+            'system_scope' => 'Sebagai pengelola sistem, akunmu dapat membaca seluruh data sistem dan menjalankan aksi tertentu yang memang sudah disediakan backend secara aman.',
+            'system_manager_user_help' => 'Perintah user yang saat ini tersedia untuk pengelola sistem adalah tambah user, ubah level user, dan hapus user dengan format yang sudah ditentukan.',
+            'reports_help' => 'Menu laporan menampilkan ringkasan data sekolah seperti inventaris, ruangan, dan pengajuan dalam bentuk baca saja sesuai role akunmu.',
+            'owner_scope' => 'Sebagai owner, kamu dapat melihat ringkasan seluruh data sekolah, tetapi tidak dapat menambah, mengubah, atau menghapus data lewat chatbot.',
+            default => $this->buildHelpAnswer($context),
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function buildRestrictedScopeAnswer(array $context): string
+    {
+        $level = (int) ($context['role']['level'] ?? 0);
+
+        return match ($level) {
+            1 => 'Akun ketua kelas tidak dapat membuka data kelas lain, data seluruh sekolah, atau melakukan tambah, ubah, dan hapus data lewat chatbot.',
+            2 => 'Akun wali kelas hanya dapat membuka data kelas binaannya sendiri dan tidak dapat mengakses kelas lain atau melakukan CRUD data lewat chatbot.',
+            3 => 'Walau pengelola sistem memiliki akses luas, chatbot tetap tidak menampilkan database mentah dan hanya menjalankan aksi yang sudah diamankan backend.',
+            4 => 'Akun owner bersifat baca saja. Kamu tidak dapat menambah, mengubah, atau menghapus data lewat chatbot.',
+            default => 'Akses akun ini terbatas sesuai role yang sedang aktif.',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     */
+    private function buildAvailableMenuAnswer(array $context): string
+    {
+        $level = (int) ($context['role']['level'] ?? 0);
+
+        return match ($level) {
+            1 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Kelas Saya', 'Ajukan Permintaan', 'Riwayat Pengajuan']).'.',
+            2 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Kelas Binaan', 'Pengajuan Masuk', 'Riwayat Verifikasi']).'.',
+            3 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Data User', 'Data Ruangan', 'Data Barang', 'Data Inventaris', 'Realisasi Pengajuan', 'Asisten Sistem', 'Laporan']).'.',
+            4 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Asisten Sistem', 'Laporan']).'.',
+            default => 'Menu dashboard akan mengikuti role akun yang sedang aktif.',
+        };
+    }
+
+    private function buildGlobalItemAnswer(): string
+    {
+        $totalItems = (int) DB::table('barang')->count();
+
+        return 'Saat ini terdapat '.$totalItems.' data barang yang terdaftar di sistem.';
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $nodes
+     * @return array<int, array<string, string>>
+     */
+    private function formatOptions(array $nodes): array
+    {
+        return array_map(function ($node) {
+            return $this->option(
+                (string) $node['id'],
+                (string) $node['label'],
+                (string) ($node['icon'] ?? 'bi bi-arrow-right')
+            );
+        }, $nodes);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<int, string>  $ids
+     * @return array<int, array<string, string>>
+     */
+    private function formatOptionsFromIds(array $context, array $ids): array
+    {
+        $catalog = [];
+
+        foreach ($this->flattenGuidedTree($this->guidedTreeForContext($context)) as $node) {
+            $catalog[$node['id']] = $node;
+        }
+
+        foreach ($this->rootOptionsForContext($context) as $option) {
+            $catalog[$option['id']] = $option;
+        }
+
+        $result = [];
+
+        foreach ($ids as $id) {
+            if ($id === '__root') {
+                $result[] = $this->option('__root', 'Kembali ke menu utama', 'bi bi-house-door-fill');
+                continue;
+            }
+
+            if (! isset($catalog[$id])) {
+                continue;
+            }
+
+            $item = $catalog[$id];
+            $result[] = $this->option(
+                (string) $item['id'],
+                (string) $item['label'],
+                (string) ($item['icon'] ?? 'bi bi-arrow-right')
+            );
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function option(string $id, string $label, string $icon = 'bi bi-arrow-right'): array
+    {
+        return [
+            'id' => $id,
+            'label' => $label,
+            'icon' => $icon,
+        ];
     }
 
     /**
@@ -198,8 +923,8 @@ class ChatbotAccessService
     {
         return match ($level) {
             1 => ['level' => 1, 'name' => 'Ketua Kelas'],
-            2 => ['level' => 2, 'name' => 'Admin / Wali Kelas'],
-            3 => ['level' => 3, 'name' => 'Superadmin'],
+            2 => ['level' => 2, 'name' => 'Wali Kelas'],
+            3 => ['level' => 3, 'name' => 'Pengelola Sistem'],
             4 => ['level' => 4, 'name' => 'Owner'],
             default => ['level' => $level, 'name' => 'Tidak dikenal'],
         };
@@ -277,10 +1002,6 @@ class ChatbotAccessService
             return 'wellbeing';
         }
 
-        if ($this->looksLikeConversationMessage($text)) {
-            return 'conversation';
-        }
-
         if ($this->containsAny($text, ['gajadi', 'ga jadi', 'gak jadi', 'nggak jadi', 'batal', 'tidak jadi'])) {
             return 'cancel';
         }
@@ -313,8 +1034,19 @@ class ChatbotAccessService
             return 'no_followup';
         }
 
-        if ($this->looksLikeMathQuestion($text)) {
-            return 'math_question';
+        if (mb_strlen(trim($text)) <= 1) {
+            return 'unclear_text';
+        }
+
+        if (preg_match('/^[a-z]{4,}$/', trim($text)) && ! str_contains($text, ' ')) {
+            return 'unclear_text';
+        }
+
+        if (preg_match('/^[a-z\s]{2,}$/', trim($text)) === 1
+            && ! str_contains($text, ' ')
+            && ! $this->containsAny($text, ['ok', 'oke', 'sip', 'hai', 'halo', 'hi'])
+        ) {
+            return 'unclear_text';
         }
 
         if ($this->containsAny($text, ['database', 'sql', 'query', 'tabel', 'schema'])) {
@@ -357,6 +1089,10 @@ class ChatbotAccessService
             return 'cross_scope_data';
         }
 
+        if (! $this->isInfraSPHRelatedText($text)) {
+            return 'unclear_text';
+        }
+
         return 'general_help';
     }
 
@@ -384,7 +1120,7 @@ class ChatbotAccessService
             && $assignedRoomIds === []) {
             return [
                 'allowed' => false,
-                'message' => 'Maaf, akunmu belum memiliki penugasan kelas atau ruangan aktif. Hubungi superadmin untuk mengatur akses kelasmu.',
+                'message' => 'Maaf, akunmu belum memiliki penugasan kelas atau ruangan aktif. Hubungi wali kelas atau pengelola sistem untuk mengatur akses kelasmu.',
             ];
         }
 
@@ -392,7 +1128,7 @@ class ChatbotAccessService
             if ((int) ($context['role']['level'] ?? 0) !== 3) {
                 return [
                     'allowed' => false,
-                    'message' => 'Maaf, aksi pengelolaan data hanya tersedia untuk akun superadmin.',
+                    'message' => 'Maaf, aksi pengelolaan data hanya tersedia untuk akun pengelola sistem.',
                 ];
             }
 
@@ -469,7 +1205,6 @@ class ChatbotAccessService
     {
         return match ($intent) {
             'wellbeing' => $this->buildWellbeingAnswer($context),
-            'conversation' => $this->buildConversationAnswer(),
             'cancel' => $this->buildCancelAnswer($context),
             'gratitude' => $this->buildGratitudeAnswer($context),
             'identity' => $this->buildIdentityAnswer($context),
@@ -478,7 +1213,6 @@ class ChatbotAccessService
             'acknowledgement' => $this->buildAcknowledgementAnswer($context),
             'no_followup' => $this->buildNoFollowupAnswer($context),
             'unclear_text' => $this->buildUnclearTextAnswer(),
-            'math_question' => $this->buildMathAnswer($message),
             'out_of_scope' => $this->buildOutOfScopeAnswer(),
             'create_user' => $this->buildCreateUserAnswer($message),
             'update_user_level' => $this->buildUpdateUserLevelAnswer($message),
@@ -498,12 +1232,7 @@ class ChatbotAccessService
      */
     private function buildWellbeingAnswer(array $context): string
     {
-        return 'Halo, '.$context['user']['nama'].'. Saya baik, terima kasih. Kalau ada yang ingin kamu tanyakan, baik soal pelajaran sekolah maupun fitur InfraSPH, saya siap membantu.';
-    }
-
-    private function buildConversationAnswer(): string
-    {
-        return 'Tanggapi pesan user secara natural, santai, dan sesuai konteks percakapan.';
+        return 'Halo, '.$context['user']['nama'].'. Saya baik, terima kasih. Kalau ada yang ingin kamu tanyakan soal InfraSPH, saya siap membantu.';
     }
 
     /**
@@ -519,7 +1248,7 @@ class ChatbotAccessService
      */
     private function buildGratitudeAnswer(array $context): string
     {
-        return 'Sama-sama, '.$context['user']['nama'].'. Kalau masih ada soal pelajaran atau hal di InfraSPH yang ingin dicek, saya siap bantu lagi.';
+        return 'Sama-sama, '.$context['user']['nama'].'. Kalau masih ada hal di InfraSPH yang ingin dicek, saya siap bantu lagi.';
     }
 
     /**
@@ -529,7 +1258,7 @@ class ChatbotAccessService
     {
         $roleName = $context['role']['name'] ?? 'Pengguna';
 
-        return 'Saya adalah tutor AI dan asisten InfraSPH. Saya bisa membantu menjawab pertanyaan pelajaran sekolah, pertanyaan umum, serta penggunaan sistem sesuai akses akun '.$roleName.' kamu.';
+        return 'Saya adalah customer service dan asisten InfraSPH. Saya membantu menjawab pertanyaan tentang menu, inventaris, pengajuan, akun, dan penggunaan sistem sesuai akses akun '.$roleName.' kamu.';
     }
 
     /**
@@ -538,12 +1267,12 @@ class ChatbotAccessService
     private function buildCapabilitiesAnswer(array $context): string
     {
         $level = (int) ($context['role']['level'] ?? 0);
-        $base = 'Saya bisa membantu menjawab materi pelajaran sekolah, menjelaskan langkah pengerjaan soal, serta membantu fitur dashboard dan ringkasan data sesuai hak akses akunmu.';
+        $base = 'Saya bisa membantu menjelaskan fitur dashboard, menampilkan ringkasan inventaris, ruangan, dan status pengajuan sesuai hak akses akunmu.';
 
         return match ($level) {
-            1 => $base.' Untuk akunmu, akses sistem saya fokus pada data diri sendiri, ruangan yang ditugaskan, dan pengajuan milikmu.',
-            2 => $base.' Untuk akun wali kelas, akses sistem saya mencakup data kelas sendiri dan lingkup penugasan wali kelas.',
-            3 => $base.' Untuk superadmin, saya juga bisa membantu ringkasan global sistem dan konteks operasional yang lebih luas.',
+            1 => $base.' Untuk akunmu, saya fokus pada data diri sendiri, ruangan yang ditugaskan, dan pengajuan milikmu.',
+            2 => $base.' Untuk akun wali kelas, saya bisa membantu data kelas sendiri dan lingkup penugasan wali kelas.',
+            3 => $base.' Untuk pengelola sistem, saya juga bisa membantu ringkasan global sistem dan konteks operasional yang lebih luas.',
             4 => $base.' Untuk owner, saya bisa membantu akses baca seluruh data sekolah tanpa aksi tambah, ubah, atau hapus.',
             default => $base,
         };
@@ -578,28 +1307,7 @@ class ChatbotAccessService
      */
     private function buildUnclearTextAnswer(): string
     {
-        return 'Jika maksud user belum jelas, minta klarifikasi secara santai dan singkat.';
-    }
-
-    private function buildMathAnswer(string $message): string
-    {
-        $expression = $this->extractMathExpression($message);
-
-        if ($expression === null) {
-            return 'Saya siap bantu matematika. Coba kirim soalnya lebih jelas, misalnya `12 + 8` atau `berapa 24 dibagi 6`.';
-        }
-
-        $result = $this->evaluateMathExpression($expression);
-
-        if ($result === null) {
-            return 'Saya belum bisa menghitung bentuk soal itu secara otomatis. Coba kirim ekspresi yang lebih sederhana, misalnya `1+1`, `12 x 8`, atau `24 : 6`.';
-        }
-
-        $formattedResult = fmod($result, 1.0) === 0.0
-            ? number_format($result, 0, ',', '.')
-            : rtrim(rtrim(number_format($result, 10, '.', ''), '0'), '.');
-
-        return 'Jawabannya '.$formattedResult.'.';
+        return 'Maaf, saya belum bisa memahami maksud pesan Anda. Silakan kirim pertanyaan atau jelaskan masalah Anda terkait InfraSPH dengan lebih jelas, agar saya bisa membantu.';
     }
 
     /**
@@ -607,7 +1315,7 @@ class ChatbotAccessService
      */
     private function buildOutOfScopeAnswer(): string
     {
-        return 'Maaf, saya belum bisa membantu untuk permintaan itu. Saya paling siap membantu materi pelajaran sekolah, pertanyaan umum, dan penggunaan InfraSPH sesuai akses akun.';
+        return 'Maaf, saya belum bisa memahami maksud pesan Anda. Silakan kirim pertanyaan atau jelaskan masalah Anda terkait InfraSPH dengan lebih jelas, agar saya bisa membantu.';
     }
 
     /**
@@ -615,7 +1323,15 @@ class ChatbotAccessService
      */
     private function buildHelpAnswer(array $context): string
     {
-        return 'Saya bisa membantu materi pelajaran sekolah, pertanyaan umum, dan fitur InfraSPH sesuai akses akunmu.';
+        $level = (int) ($context['role']['level'] ?? 0);
+
+        return match ($level) {
+            1 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Saya', 'Inventaris Kelas', 'Pengajuan', 'Akun', 'Penggunaan Dashboard']).'. Kamu juga bisa memilih kategori bantuan yang tersedia di panel chat.',
+            2 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Binaan', 'Inventaris Kelas', 'Pengajuan Masuk', 'Riwayat Verifikasi']).' sesuai aksesmu.',
+            3 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Data User', 'Data Ruangan', 'Data Barang', 'Data Inventaris', 'Realisasi Pengajuan', 'Asisten Sistem', 'Laporan']).' sesuai akses akunmu.',
+            4 => 'Saya bisa membantu untuk melihat ringkasan melalui '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Asisten Sistem', 'Laporan']).' sesuai akses baca akunmu.',
+            default => 'Saya siap membantu soal inventaris, ruangan, pengajuan, dan penggunaan dashboard sesuai akses akunmu.',
+        };
     }
 
     /**
@@ -634,7 +1350,15 @@ class ChatbotAccessService
         $roomNames = $context['scope']['assigned_room_names'] ?? [];
 
         if ($roomNames === []) {
-            return 'Akun ini belum memiliki penugasan ruangan aktif. Silakan hubungi superadmin jika ruangan seharusnya sudah ditetapkan.';
+            return 'Akun ini belum memiliki penugasan ruangan aktif. Silakan hubungi wali kelas atau pengelola sistem jika ruangan seharusnya sudah ditetapkan.';
+        }
+
+        if ($level === 1) {
+            return 'Kamu bisa membuka menu '.$this->formatMenuName('Kelas Saya').' untuk melihat data kelas dan ruangan yang tersedia. Saat ini kelas yang terhubung ke akunmu adalah '.implode(', ', $roomNames).'.';
+        }
+
+        if ($level === 2) {
+            return 'Kamu bisa membuka menu '.$this->formatMenuName('Kelas Binaan').' untuk melihat data kelas yang tersedia. Saat ini kelas binaan yang terhubung ke akunmu adalah '.implode(', ', $roomNames).'.';
         }
 
         return 'Ruang lingkup yang dapat kamu akses saat ini: '.implode(', ', $roomNames).'.';
@@ -679,6 +1403,14 @@ class ChatbotAccessService
             return 'Belum ada data inventaris yang tercatat untuk lingkup ruanganmu.';
         }
 
+        if ($level === 1 && ! $wantsDetail) {
+            return 'Kamu bisa melihat inventaris kelasmu melalui menu '.$this->formatMenuName('Kelas Saya').' atau '.$this->formatMenuName('Inventaris Kelas').'. Dari sana tersedia ringkasan dan daftar barang yang bisa kamu akses.';
+        }
+
+        if ($level === 2 && ! $wantsDetail) {
+            return 'Kamu bisa melihat inventaris kelas binaanmu melalui menu '.$this->formatMenuName('Inventaris Kelas').' untuk melihat ringkasan dan detail barang yang tersedia.';
+        }
+
         if ($wantsDetail) {
             $details = DB::table('inventaris_ruangan as ir')
                 ->join('barang as b', 'b.id_barang', '=', 'ir.id_barang')
@@ -717,7 +1449,7 @@ class ChatbotAccessService
                 ->selectRaw('COUNT(*) as total, SUM(CASE WHEN status_permintaan NOT IN ("selesai", "ditolak_admin", "ditolak_owner", "ditolak") THEN 1 ELSE 0 END) as aktif')
                 ->first();
 
-            return 'Status pengajuanmu saat ini: '.(int) ($requests->aktif ?? 0).' pengajuan aktif dari total '.(int) ($requests->total ?? 0).' pengajuan.';
+            return 'Kamu bisa membuka menu '.$this->formatMenuName('Pengajuan').' atau '.$this->formatMenuName('Riwayat Pengajuan').' untuk melihat status permintaanmu. Saat ini ada '.(int) ($requests->aktif ?? 0).' pengajuan aktif dari total '.(int) ($requests->total ?? 0).' pengajuan.';
         }
 
         if ($level === 2) {
@@ -728,7 +1460,7 @@ class ChatbotAccessService
                 ->selectRaw('COUNT(*) as total, SUM(CASE WHEN status_permintaan = "diajukan" THEN 1 ELSE 0 END) as menunggu')
                 ->first();
 
-            return 'Dalam lingkup wali kelasmu terdapat '.(int) ($requests->total ?? 0).' pengajuan, dengan '.(int) ($requests->menunggu ?? 0).' yang masih menunggu tindak lanjut.';
+            return 'Kamu bisa cek menu '.$this->formatMenuName('Pengajuan Masuk').' untuk melihat permintaan dari kelas binaanmu. Saat ini terdapat '.(int) ($requests->total ?? 0).' pengajuan, dengan '.(int) ($requests->menunggu ?? 0).' yang masih menunggu tindak lanjut.';
         }
 
         $requests = DB::table('permintaan')
@@ -781,7 +1513,7 @@ class ChatbotAccessService
         $level = (int) ($context['role']['level'] ?? 0);
 
         if ($level === 3) {
-            return 'Akun superadmin memiliki hak aksi tertinggi. Saat ini chatbot sudah mulai mendukung aksi eksplisit untuk pengelolaan user, dan aksi sistem lain bisa ditambahkan bertahap dengan validasi backend.';
+            return 'Akun pengelola sistem memiliki hak aksi tertinggi. Saat ini chatbot sudah mulai mendukung aksi eksplisit untuk pengelolaan user, dan aksi sistem lain bisa ditambahkan bertahap dengan validasi backend.';
         }
 
         return 'Akun ini hanya memiliki akses baca atau bantuan terbatas, jadi aksi tambah, ubah, dan hapus tidak tersedia lewat chatbot.';
@@ -948,170 +1680,68 @@ class ChatbotAccessService
         return false;
     }
 
-    private function looksLikeMathQuestion(string $text): bool
+    private function isInfraSPHRelatedText(string $text): bool
     {
-        if ($this->containsAny($text, ['matematika', 'hitung', 'berapa hasil', 'hasil dari', 'jumlahkan', 'kurangkan', 'kali', 'dibagi'])) {
-            return true;
-        }
-
-        return preg_match('/^\s*[-+()0-9xX*\/:.,\s]+\s*=?\s*$/', $text) === 1
-            && preg_match('/\d/', $text) === 1;
-    }
-
-    private function looksLikeConversationMessage(string $text): bool
-    {
-        $trimmed = trim($text);
-
-        if ($trimmed === '') {
-            return false;
-        }
-
-        if (mb_strlen($trimmed) > 80) {
-            return false;
-        }
-
-        if ($this->looksLikeMathQuestion($trimmed)) {
-            return false;
-        }
-
-        return ! $this->containsAny($trimmed, [
-            'database', 'sql', 'query', 'tabel', 'schema',
-            'pengajuan', 'permintaan', 'inventaris', 'barang',
-            'kelas', 'ruangan', 'tambah', 'tambahkan', 'ubah',
-            'edit', 'hapus', 'delete', 'perbarui', 'update',
-            'menu', 'fitur',
+        return $this->containsAny($text, [
+            'infrasph',
+            'kelas',
+            'ruangan',
+            'inventaris',
+            'barang',
+            'pengajuan',
+            'permintaan',
+            'akun',
+            'password',
+            'dashboard',
+            'menu',
+            'fitur',
+            'akses',
+            'laporan',
+            'verifikasi',
+            'realisasi',
+            'data',
+            'wali kelas',
+            'owner',
+            'pengelola sistem',
+            'sistem',
+            'login',
+            'riwayat',
+            'status',
+            'ajukan',
+            'kelas binaan',
+            'kelas saya',
+            'inventaris kelas',
+            'penggunaan dashboard',
         ]);
     }
 
-    private function extractMathExpression(string $message): ?string
+    private function formatMenuName(string $menuName): string
     {
-        $expression = mb_strtolower(trim($message));
-        $expression = str_replace(['×', 'x', ':'], ['*', '*', '/'], $expression);
-        $expression = str_replace(',', '.', $expression);
-        $expression = preg_replace('/\b(berapa|hasil|dari|adalah|hitung|berapa hasil)\b/u', ' ', $expression);
-        $expression = preg_replace('/[^0-9\.\+\-\*\/\(\)\s]/', ' ', $expression);
-        $expression = preg_replace('/\s+/', ' ', (string) $expression);
-        $expression = trim((string) $expression);
-
-        if ($expression === '' || preg_match('/\d/', $expression) !== 1) {
-            return null;
-        }
-
-        return $expression;
+        return '['.$menuName.']';
     }
 
-    private function evaluateMathExpression(string $expression): ?float
+    /**
+     * @param  array<int, string>  $menuNames
+     */
+    private function formatMenuList(array $menuNames): string
     {
-        preg_match_all('/\d+(?:\.\d+)?|[()+\-*\/]/', $expression, $matches);
-        $tokens = $matches[0] ?? [];
+        $formatted = array_map(fn (string $menuName) => $this->formatMenuName($menuName), $menuNames);
+        $count = count($formatted);
 
-        if ($tokens === []) {
-            return null;
+        if ($count === 0) {
+            return '';
         }
 
-        $index = 0;
-        $value = $this->parseMathExpression($tokens, $index);
-
-        if ($value === null || $index !== count($tokens)) {
-            return null;
+        if ($count === 1) {
+            return $formatted[0];
         }
 
-        return $value;
-    }
-
-    private function parseMathExpression(array $tokens, int &$index): ?float
-    {
-        $value = $this->parseMathTerm($tokens, $index);
-
-        if ($value === null) {
-            return null;
+        if ($count === 2) {
+            return $formatted[0].' dan '.$formatted[1];
         }
 
-        while ($index < count($tokens) && in_array($tokens[$index], ['+', '-'], true)) {
-            $operator = $tokens[$index++];
-            $right = $this->parseMathTerm($tokens, $index);
+        $last = array_pop($formatted);
 
-            if ($right === null) {
-                return null;
-            }
-
-            $value = $operator === '+' ? $value + $right : $value - $right;
-        }
-
-        return $value;
-    }
-
-    private function parseMathTerm(array $tokens, int &$index): ?float
-    {
-        $value = $this->parseMathFactor($tokens, $index);
-
-        if ($value === null) {
-            return null;
-        }
-
-        while ($index < count($tokens) && in_array($tokens[$index], ['*', '/'], true)) {
-            $operator = $tokens[$index++];
-            $right = $this->parseMathFactor($tokens, $index);
-
-            if ($right === null) {
-                return null;
-            }
-
-            if ($operator === '/') {
-                if ((float) $right === 0.0) {
-                    return null;
-                }
-
-                $value /= $right;
-                continue;
-            }
-
-            $value *= $right;
-        }
-
-        return $value;
-    }
-
-    private function parseMathFactor(array $tokens, int &$index): ?float
-    {
-        if ($index >= count($tokens)) {
-            return null;
-        }
-
-        $token = $tokens[$index];
-
-        if ($token === '-') {
-            $index++;
-            $value = $this->parseMathFactor($tokens, $index);
-
-            return $value === null ? null : -$value;
-        }
-
-        if ($token === '+') {
-            $index++;
-
-            return $this->parseMathFactor($tokens, $index);
-        }
-
-        if ($token === '(') {
-            $index++;
-            $value = $this->parseMathExpression($tokens, $index);
-
-            if ($value === null || ($tokens[$index] ?? null) !== ')') {
-                return null;
-            }
-
-            $index++;
-
-            return $value;
-        }
-
-        if (is_numeric($token)) {
-            $index++;
-
-            return (float) $token;
-        }
-
-        return null;
+        return implode(', ', $formatted).', dan '.$last;
     }
 }

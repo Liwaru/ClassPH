@@ -22,8 +22,7 @@ class Control extends Controller
             'summary_cards' => [
                 ['label' => 'Ruangan Saya', 'value' => '-', 'tone' => 'soft'],
                 ['label' => 'Barang Tercatat', 'value' => '0 Barang', 'tone' => 'solid'],
-                ['label' => 'Barang Perlu Dicek', 'value' => '0 Barang', 'tone' => 'warn'],
-                ['label' => 'Pengajuan Aktif', 'value' => '0 Permintaan', 'tone' => 'soft'],
+                ['label' => 'Pengajuan', 'value' => '0 Permintaan', 'tone' => 'soft'],
             ],
             'quick_actions' => [
                 'Lihat inventaris ruangan',
@@ -43,7 +42,7 @@ class Control extends Controller
                 [
                     'title' => 'Pengajuan Terbaru',
                     'items' => [
-                        'Perbaikan kipas angin - Menunggu verifikasi admin',
+                        'Perbaikan kipas angin - Menunggu verifikasi wali kelas',
                         'Penambahan kursi siswa - Menunggu persetujuan owner',
                         'Penggantian lampu kelas - Selesai direalisasikan',
                     ],
@@ -51,7 +50,7 @@ class Control extends Controller
             ],
         ],
         2 => [
-            'role_name' => 'Admin / Wali Kelas',
+            'role_name' => 'Wali Kelas',
             'headline' => 'Verifikasi pengajuan kelas yang kamu pegang dan pantau inventarisnya.',
             'summary_cards' => [
                 ['label' => 'Ruangan Tanggung Jawab', 'value' => '4 Ruangan', 'tone' => 'soft'],
@@ -113,13 +112,13 @@ class Control extends Controller
                     'items' => [
                         'Permintaan perbaikan paling banyak berasal dari ruang kelas aktif.',
                         'Pengajuan penambahan meja dan kursi mendominasi bulan ini.',
-                        'Sebagian besar pengajuan lolos verifikasi admin.',
+                        'Sebagian besar pengajuan lolos verifikasi wali kelas.',
                     ],
                 ],
             ],
         ],
         4 => [
-            'role_name' => 'Superadmin',
+            'role_name' => 'Pengelola Sistem',
             'headline' => 'Kelola data master, pantau sistem, dan realisasikan pengajuan yang sudah disetujui.',
             'summary_cards' => [
                 ['label' => 'Total User', 'value' => '36 Akun', 'tone' => 'soft'],
@@ -234,13 +233,47 @@ class Control extends Controller
         $roomIds = $assignments->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
         $inventoryRows = $this->getInventoryRowsForRooms($roomIds);
         $inventoryByRoom = $inventoryRows->groupBy('id_ruangan');
+        $requestRows = $this->getRequestRowsForRooms($roomIds);
+        $requestsByRoom = $requestRows->groupBy('id_ruangan');
+        $roomContacts = $this->getRoomContactsForRooms($roomIds);
         $dashboard = $this->resolveDashboardData($user);
+        $roomOverviews = $assignments->map(function ($assignment) use ($inventoryByRoom, $requestsByRoom, $roomContacts) {
+            $roomInventory = $inventoryByRoom->get($assignment->id_ruangan, collect());
+            $roomRequests = $requestsByRoom->get($assignment->id_ruangan, collect());
+            $totalGood = (int) $roomInventory->sum('jumlah_baik');
+            $totalBad = (int) $roomInventory->sum('jumlah_rusak');
+            $totalItems = $totalGood + $totalBad;
+            $activeRequests = (int) $roomRequests
+                ->reject(fn ($request) => in_array((string) $request->status_permintaan, ['selesai', 'ditolak_admin', 'ditolak_owner', 'ditolak'], true))
+                ->count();
 
-        return view('class-inventory', [
+            return [
+                'assignment' => $assignment,
+                'inventory_rows' => $roomInventory,
+                'summary' => [
+                    'total_barang' => $totalItems,
+                    'barang_baik' => $totalGood,
+                    'barang_rusak' => $totalBad,
+                    'pengajuan_aktif' => $activeRequests,
+                ],
+                'wali_kelas' => $roomContacts[(int) $assignment->id_ruangan] ?? 'Belum ditentukan',
+                'latest_requests' => $roomRequests
+                    ->sortByDesc('id_permintaan')
+                    ->take(2)
+                    ->map(fn ($request) => [
+                        'jenis' => ucfirst((string) $request->jenis_permintaan),
+                        'status' => $this->formatRequestStatusLabel((string) $request->status_permintaan),
+                        'tanggal' => (string) $request->tanggal_permintaan,
+                    ])
+                    ->values()
+                    ->all(),
+            ];
+        })->values();
+
+        return view('kelas_saya', [
             'user' => $user,
             'dashboard' => $dashboard,
-            'assignments' => $assignments,
-            'inventoryByRoom' => $inventoryByRoom,
+            'roomOverviews' => $roomOverviews,
         ]);
     }
 
@@ -256,11 +289,11 @@ class Control extends Controller
         $assignment = $this->getActiveAssignmentsForUser($user)->sortByDesc('id_penugasan_ruangan')->first();
 
         if (! $assignment) {
-            $dashboard['headline'] = 'Akunmu belum terhubung ke ruangan. Hubungi superadmin untuk menambahkan penugasan ruangan.';
+            $dashboard['headline'] = 'Akunmu belum terhubung ke ruangan. Hubungi wali kelas atau pengelola sistem untuk menambahkan penugasan ruangan.';
             $dashboard['panels'][0]['items'] = [
                 'Akun ketua kelas membutuhkan data penugasan ruangan aktif.',
                 'Setelah ruangan ditentukan, dashboard akan menampilkan inventaris dan pengajuan secara otomatis.',
-                'Hubungi superadmin untuk menambahkan relasi di tabel penugasan ruangan.',
+                'Hubungi wali kelas atau pengelola sistem untuk menambahkan relasi di tabel penugasan ruangan.',
             ];
             $dashboard['panels'][1]['items'] = [
                 'Belum ada data ruangan yang dapat ditampilkan.',
@@ -292,7 +325,7 @@ class Control extends Controller
                 return sprintf(
                     '%s - %s (%s)',
                     ucfirst($request->jenis_permintaan),
-                    str_replace('_', ' ', ucfirst($request->status_permintaan)),
+                    $this->formatRequestStatusLabel((string) $request->status_permintaan),
                     $request->tanggal_permintaan
                 );
             })
@@ -306,8 +339,7 @@ class Control extends Controller
         $dashboard['summary_cards'] = [
             ['label' => 'Ruangan Saya', 'value' => $assignment->nama_ruangan, 'tone' => 'soft'],
             ['label' => 'Barang Tercatat', 'value' => number_format((int) ($inventoryTotals->total_barang ?? 0)).' Barang', 'tone' => 'solid'],
-            ['label' => 'Barang Perlu Dicek', 'value' => number_format((int) ($inventoryTotals->barang_perlu_dicek ?? 0)).' Barang', 'tone' => 'warn'],
-            ['label' => 'Pengajuan Aktif', 'value' => number_format($activeRequestCount).' Permintaan', 'tone' => 'soft'],
+            ['label' => 'Pengajuan', 'value' => number_format($activeRequestCount).' Permintaan', 'tone' => 'soft'],
         ];
 
         $dashboard['panels'][0]['items'] = [
@@ -585,6 +617,70 @@ class Control extends Controller
                 'ir.jumlah_rusak',
                 'ir.keterangan',
             ]);
+    }
+
+    /**
+     * @param  array<int, int>  $roomIds
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function getRequestRowsForRooms(array $roomIds)
+    {
+        if ($roomIds === []) {
+            return collect();
+        }
+
+        return DB::table('permintaan')
+            ->whereIn('id_ruangan', $roomIds)
+            ->orderByDesc('tanggal_permintaan')
+            ->orderByDesc('id_permintaan')
+            ->get([
+                'id_permintaan',
+                'id_ruangan',
+                'jenis_permintaan',
+                'status_permintaan',
+                'tanggal_permintaan',
+            ]);
+    }
+
+    /**
+     * @param  array<int, int>  $roomIds
+     * @return array<int, string>
+     */
+    private function getRoomContactsForRooms(array $roomIds): array
+    {
+        if ($roomIds === []) {
+            return [];
+        }
+
+        return DB::table('penugasan_ruangan as pr')
+            ->join('users as u', 'u.id_user', '=', 'pr.id_user')
+            ->whereIn('pr.id_ruangan', $roomIds)
+            ->where('pr.status', 'aktif')
+            ->orderByDesc('u.level')
+            ->orderBy('u.nama')
+            ->get([
+                'pr.id_ruangan',
+                'pr.peran_ruangan',
+                'u.level',
+                'u.nama',
+            ])
+            ->groupBy('id_ruangan')
+            ->map(function ($rows) {
+                $wali = $rows->first(function ($row) {
+                    return (int) $row->level === 2 || str_contains(strtolower((string) $row->peran_ruangan), 'wali');
+                });
+
+                return $wali?->nama ?? ($rows->first()->nama ?? 'Belum ditentukan');
+            })
+            ->all();
+    }
+
+    private function formatRequestStatusLabel(string $status): string
+    {
+        $label = str_replace('_', ' ', strtolower($status));
+        $label = str_replace('admin', 'wali kelas', $label);
+
+        return ucfirst($label);
     }
 
     /**
