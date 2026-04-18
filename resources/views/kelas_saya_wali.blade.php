@@ -252,7 +252,7 @@
         }
 
         .inventory-table-wrap {
-            overflow-x: auto;
+            overflow-x: hidden;
             border: 1px solid #f3e3db;
             border-radius: 22px;
             background: linear-gradient(180deg, #fffdfa, #ffffff);
@@ -262,7 +262,7 @@
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
-            min-width: 720px;
+            table-layout: fixed;
         }
 
         .inventory-table th,
@@ -289,6 +289,14 @@
         }
 
         .inventory-table tbody tr:last-child td { border-bottom: none; }
+        .inventory-table th:nth-child(1),
+        .inventory-table td:nth-child(1) { width: 28%; }
+        .inventory-table th:nth-child(2),
+        .inventory-table td:nth-child(2) { width: 14%; }
+        .inventory-table th:nth-child(3),
+        .inventory-table td:nth-child(3) { width: 18%; }
+        .inventory-table th:nth-child(4),
+        .inventory-table td:nth-child(4) { width: 40%; }
         .inventory-name { font-weight: 700; color: #172033; }
         .inventory-count { font-weight: 700; }
 
@@ -323,6 +331,8 @@
             }
 
             .summary-grid { grid-template-columns: 1fr; }
+            .inventory-table-wrap { overflow-x: auto; }
+            .inventory-table { min-width: 720px; table-layout: auto; }
         }
     </style>
 </head>
@@ -374,7 +384,7 @@
                                         <div class="summary-note">Inventaris tercatat untuk kelas ini</div>
                                     </div>
                                     <div class="summary-card is-accent">
-                                        <div class="summary-label">Pengajuan Masuk</div>
+                                        <div class="summary-label">Pengajuan Kelas</div>
                                         <div class="summary-value">{{ number_format($summary['menunggu_review']) }}</div>
                                         <div class="summary-note">Perlu ditinjau oleh wali kelas</div>
                                     </div>
@@ -460,7 +470,7 @@
                                             <div class="room-section-title">Akses Cepat</div>
                                             <div class="quick-links">
                                                 <a href="{{ $inboxUrl }}" class="quick-link">
-                                                    <span><i class="bi bi-inbox-fill"></i> Lihat Pengajuan Masuk</span>
+                                                    <span><i class="bi bi-inbox-fill"></i> Lihat Pengajuan Kelas</span>
                                                     <i class="bi bi-arrow-right"></i>
                                                 </a>
                                                 <a href="{{ $historyUrl }}" class="quick-link">

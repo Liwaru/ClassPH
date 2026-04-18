@@ -12,6 +12,9 @@ Route::get('/ajukan-permintaan', [Control::class, 'createRequest'])->name('reque
 Route::post('/ajukan-permintaan', [Control::class, 'storeRequest'])->name('requests.store');
 Route::get('/riwayat-pengajuan', [Control::class, 'requestHistory'])->name('requests.history');
 Route::get('/wali-kelas/riwayat-pengajuan', [Control::class, 'adminRequestHistory'])->name('admin.requests.history');
+Route::get('/wali-kelas/pengajuan-masuk', [Control::class, 'adminRequestInbox'])->name('admin.requests.inbox');
+Route::post('/wali-kelas/pengajuan-masuk/{requestId}/approve', [Control::class, 'adminApproveRequest'])->name('admin.requests.approve');
+Route::post('/wali-kelas/pengajuan-masuk/{requestId}/reject', [Control::class, 'adminRejectRequest'])->name('admin.requests.reject');
 Route::delete('/riwayat-pengajuan/{requestId}', [Control::class, 'destroyRequest'])->name('requests.destroy');
 
 Route::get('/login', [Control::class, 'showLoginForm'])->name('login');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 
 use App\Models\User;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -84,40 +85,6 @@ class Control extends Controller
             ],
         ],
         3 => [
-            'role_name' => 'Owner / Kepala Sekolah',
-            'headline' => 'Lihat kondisi inventaris sekolah dan ambil keputusan akhir pengajuan.',
-            'summary_cards' => [
-                ['label' => 'Total Ruangan', 'value' => '18 Ruangan', 'tone' => 'soft'],
-                ['label' => 'Pengajuan Final', 'value' => '5 Permintaan', 'tone' => 'solid'],
-                ['label' => 'Menunggu Keputusan', 'value' => '2 Permintaan', 'tone' => 'warn'],
-                ['label' => 'Disetujui Bulan Ini', 'value' => '14 Permintaan', 'tone' => 'soft'],
-            ],
-            'quick_actions' => [
-                'Lihat semua pengajuan final',
-                'Tinjau inventaris sekolah',
-                'Lihat laporan pengajuan',
-                'Cek histori persetujuan',
-            ],
-            'panels' => [
-                [
-                    'title' => 'Keputusan Strategis',
-                    'items' => [
-                        'Prioritaskan pengajuan yang berdampak langsung pada kegiatan belajar.',
-                        'Pantau tren kebutuhan barang per ruangan atau unit.',
-                        'Gunakan ringkasan ini untuk persetujuan akhir yang lebih cepat.',
-                    ],
-                ],
-                [
-                    'title' => 'Laporan Singkat',
-                    'items' => [
-                        'Permintaan perbaikan paling banyak berasal dari ruang kelas aktif.',
-                        'Pengajuan penambahan meja dan kursi mendominasi bulan ini.',
-                        'Sebagian besar pengajuan lolos verifikasi wali kelas.',
-                    ],
-                ],
-            ],
-        ],
-        4 => [
             'role_name' => 'Pengelola Sistem',
             'headline' => 'Kelola data master, pantau sistem, dan realisasikan pengajuan yang sudah disetujui.',
             'summary_cards' => [
@@ -137,7 +104,7 @@ class Control extends Controller
                     'title' => 'Kontrol Sistem',
                     'items' => [
                         'Pastikan data ruangan, barang, dan kategori selalu sinkron.',
-                        'Lanjutkan realisasi pengajuan yang telah disetujui owner.',
+                        'Lanjutkan realisasi pengajuan yang telah disetujui kepala sekolah.',
                         'Jaga histori inventaris tetap rapi untuk kebutuhan audit.',
                     ],
                 ],
@@ -146,7 +113,37 @@ class Control extends Controller
                     'items' => [
                         'Update inventaris ruang laboratorium selesai dilakukan.',
                         'Reset password dua akun user berhasil diproses.',
-                        'Realisasi pengajuan kursi kelas 7A sedang berlangsung.',
+                        'Realisasi pengajuan kursi kelas RPL XI sedang berlangsung.',
+                    ],
+                ],
+            ],
+        ],
+        4 => [
+            'role_name' => 'Kepala Sekolah',
+            'headline' => 'Pantau kondisi infrastruktur sekolah dan kelola persetujuan pengajuan dari seluruh kelas.',
+            'summary_cards' => [
+                ['label' => 'Total Ruangan', 'value' => '12 Ruangan', 'tone' => 'soft'],
+                ['label' => 'Total Barang', 'value' => '320 Item', 'tone' => 'solid'],
+                ['label' => 'Pengajuan Aktif', 'value' => '8 Permintaan', 'tone' => 'soft'],
+                ['label' => 'Menunggu Persetujuan', 'value' => '3 Permintaan', 'tone' => 'warn'],
+            ],
+            'quick_actions' => [
+                'Lihat semua pengajuan',
+                'Lihat semua ruangan',
+                'Lihat laporan',
+                'Tinjau persetujuan akhir',
+            ],
+            'panels' => [
+                [
+                    'title' => 'Pengajuan Prioritas',
+                    'items' => [
+                        'Belum ada pengajuan prioritas yang menunggu persetujuan akhir.',
+                    ],
+                ],
+                [
+                    'title' => 'Ringkasan Sekolah',
+                    'items' => [
+                        'Belum ada ringkasan sekolah yang dimuat.',
                     ],
                 ],
             ],
@@ -523,7 +520,7 @@ class Control extends Controller
         $assignments = $this->getActiveAssignmentsForUser($user);
         $roomIds = $assignments->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
 
-        $requests = $roomIds === []
+        $requestCollection = $roomIds === []
             ? collect()
             : DB::table('permintaan as p')
                 ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
@@ -575,18 +572,212 @@ class Control extends Controller
                 ->values();
 
         $statusCounts = [
-            'all' => $requests->count(),
-            'process' => $requests->where('status_key', 'process')->count(),
-            'approved' => $requests->where('status_key', 'approved')->count(),
-            'rejected' => $requests->where('status_key', 'rejected')->count(),
+            'all' => $requestCollection->count(),
+            'process' => $requestCollection->where('status_key', 'process')->count(),
+            'approved' => $requestCollection->where('status_key', 'approved')->count(),
+            'rejected' => $requestCollection->where('status_key', 'rejected')->count(),
         ];
 
         return view('riwayat_pengajuan_wali', [
             'user' => $user,
             'dashboard' => $dashboard,
-            'requests' => $requests,
+            'requests' => $requestCollection,
             'statusCounts' => $statusCounts,
         ]);
+    }
+
+    public function adminRequestInbox(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 2) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $assignments = $this->getActiveAssignmentsForUser($user);
+        $roomIds = $assignments->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
+
+        $requestCollection = $roomIds === []
+            ? collect()
+            : DB::table('permintaan as p')
+                ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
+                ->join('users as u', 'u.id_user', '=', 'p.id_user_peminta')
+                ->leftJoin('detail_permintaan as dp', 'dp.id_permintaan', '=', 'p.id_permintaan')
+                ->leftJoin('barang as b', 'b.id_barang', '=', 'dp.id_barang')
+                ->whereIn('p.id_ruangan', $roomIds)
+                ->where('p.status_permintaan', 'diajukan')
+                ->orderByDesc('p.tanggal_permintaan')
+                ->orderByDesc('p.id_permintaan')
+                ->get([
+                    'p.id_permintaan',
+                    'p.kode_permintaan',
+                    'p.jenis_permintaan',
+                    'p.status_permintaan',
+                    'p.catatan_peminta',
+                    'p.tanggal_permintaan',
+                    'r.nama_ruangan',
+                    'r.kode_ruangan',
+                    'u.nama as nama_peminta',
+                    'dp.jumlah_diminta',
+                    'dp.keterangan as detail_keterangan',
+                    'b.nama_barang',
+                ])
+                ->groupBy('id_permintaan')
+                ->map(function ($rows) {
+                    $first = $rows->first();
+                    $items = $rows
+                        ->filter(fn ($row) => ! empty($row->nama_barang))
+                        ->map(fn ($row) => [
+                            'nama_barang' => ucfirst((string) $row->nama_barang),
+                            'jumlah' => (int) ($row->jumlah_diminta ?? 0),
+                            'keterangan' => (string) ($row->detail_keterangan ?? '-'),
+                        ])
+                        ->values()
+                        ->all();
+
+                    return [
+                        'id_permintaan' => (int) $first->id_permintaan,
+                        'kode_permintaan' => (string) $first->kode_permintaan,
+                        'tanggal_label' => \Carbon\Carbon::parse($first->tanggal_permintaan)->translatedFormat('d M Y'),
+                        'jenis' => $this->formatRequestTypeLabel((string) $first->jenis_permintaan),
+                        'status_raw' => (string) $first->status_permintaan,
+                        'status' => $this->formatRequestStatusLabel((string) $first->status_permintaan),
+                        'status_key' => $this->statusFilterKey((string) $first->status_permintaan),
+                        'status_class' => $this->statusBadgeClass((string) $first->status_permintaan),
+                        'ruangan' => (string) $first->nama_ruangan,
+                        'kode_ruangan' => (string) $first->kode_ruangan,
+                        'peminta' => (string) $first->nama_peminta,
+                        'barang_ringkas' => $items !== [] ? implode(', ', array_map(fn ($item) => $item['nama_barang'], $items)) : '-',
+                        'jumlah_ringkas' => $items !== [] ? array_sum(array_map(fn ($item) => $item['jumlah'], $items)) : 0,
+                        'alasan' => $items[0]['keterangan'] ?? ((string) ($first->catatan_peminta ?? '-')),
+                        'can_action' => (string) $first->status_permintaan === 'diajukan',
+                        'flow' => [
+                            ['label' => 'Ketua Kelas', 'status' => 'done'],
+                            ['label' => 'Wali Kelas', 'status' => (string) $first->status_permintaan === 'diajukan' ? 'current' : ((string) $first->status_permintaan === 'ditolak_admin' ? 'rejected' : 'done')],
+                            ['label' => 'Kepala Sekolah', 'status' => in_array((string) $first->status_permintaan, ['disetujui_admin', 'disetujui_owner', 'selesai'], true) ? 'current' : 'pending'],
+                        ],
+                    ];
+                })
+                ->values();
+
+        $currentPage = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 3;
+        $requests = new LengthAwarePaginator(
+            $requestCollection->forPage($currentPage, $perPage)->values(),
+            $requestCollection->count(),
+            $perPage,
+            $currentPage,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
+
+        return view('pengajuan_masuk_wali', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'requests' => $requests,
+        ]);
+    }
+
+    public function adminApproveRequest(Request $request, int $requestId): RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 2) {
+            return redirect()->route('dashboard');
+        }
+
+        $ownedRequest = $this->findAdminOwnedRequest($user, $requestId);
+
+        if (! $ownedRequest) {
+            return redirect()->route('admin.requests.inbox')->with('error', 'Pengajuan tidak ditemukan atau bukan bagian dari kelas yang Anda pegang.');
+        }
+
+        if ((string) $ownedRequest->status_permintaan !== 'diajukan') {
+            return redirect()->route('admin.requests.inbox')->with('error', 'Pengajuan ini sudah diproses sebelumnya.');
+        }
+
+        DB::transaction(function () use ($user, $requestId) {
+            DB::table('permintaan')
+                ->where('id_permintaan', $requestId)
+                ->update(['status_permintaan' => 'disetujui_admin']);
+
+            DB::table('persetujuan_permintaan')->updateOrInsert(
+                [
+                    'id_permintaan' => $requestId,
+                    'tahap_persetujuan' => 'admin',
+                ],
+                [
+                    'id_user_penyetuju' => (int) $user['id_user'],
+                    'status_persetujuan' => 'disetujui',
+                    'catatan_persetujuan' => 'Disetujui wali kelas',
+                    'tanggal_persetujuan' => now()->toDateString(),
+                ]
+            );
+        });
+
+        return redirect()->route('admin.requests.inbox')->with('success', 'Pengajuan disetujui dan diteruskan ke kepala sekolah.');
+    }
+
+    public function adminRejectRequest(Request $request, int $requestId): RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 2) {
+            return redirect()->route('dashboard');
+        }
+
+        $ownedRequest = $this->findAdminOwnedRequest($user, $requestId);
+
+        if (! $ownedRequest) {
+            return redirect()->route('admin.requests.inbox')->with('error', 'Pengajuan tidak ditemukan atau bukan bagian dari kelas yang Anda pegang.');
+        }
+
+        if ((string) $ownedRequest->status_permintaan !== 'diajukan') {
+            return redirect()->route('admin.requests.inbox')->with('error', 'Pengajuan ini sudah diproses sebelumnya.');
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'min:5', 'max:500'],
+        ], [
+            'rejection_reason.required' => 'Alasan penolakan wajib diisi.',
+            'rejection_reason.min' => 'Alasan penolakan minimal 5 karakter.',
+        ]);
+
+        DB::transaction(function () use ($user, $requestId, $validated) {
+            DB::table('permintaan')
+                ->where('id_permintaan', $requestId)
+                ->update(['status_permintaan' => 'ditolak_admin']);
+
+            DB::table('persetujuan_permintaan')->updateOrInsert(
+                [
+                    'id_permintaan' => $requestId,
+                    'tahap_persetujuan' => 'admin',
+                ],
+                [
+                    'id_user_penyetuju' => (int) $user['id_user'],
+                    'status_persetujuan' => 'ditolak',
+                    'catatan_persetujuan' => trim((string) $validated['rejection_reason']),
+                    'tanggal_persetujuan' => now()->toDateString(),
+                ]
+            );
+        });
+
+        return redirect()->route('admin.requests.inbox')->with('success', 'Pengajuan ditolak dan alasannya sudah disimpan.');
     }
 
     public function destroyRequest(Request $request, int $requestId): RedirectResponse
@@ -811,58 +1002,6 @@ class Control extends Controller
      */
     private function buildLevelThreeDashboard(array $dashboard): array
     {
-        $today = now()->toDateString();
-        $roomCount = (int) DB::table('ruangan')->count();
-        $requestStats = DB::table('permintaan')
-            ->selectRaw('COUNT(*) as total')
-            ->selectRaw('SUM(CASE WHEN status_permintaan IN ("disetujui_admin", "disetujui_owner", "selesai") THEN 1 ELSE 0 END) as final')
-            ->selectRaw('SUM(CASE WHEN status_permintaan = "disetujui_admin" THEN 1 ELSE 0 END) as menunggu_keputusan')
-            ->selectRaw('SUM(CASE WHEN status_permintaan IN ("disetujui_owner", "selesai") AND tanggal_permintaan = ? THEN 1 ELSE 0 END) as disetujui_hari_ini', [$today])
-            ->first();
-        $latestRequests = DB::table('permintaan as p')
-            ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
-            ->orderByDesc('p.tanggal_permintaan')
-            ->orderByDesc('p.id_permintaan')
-            ->limit(3)
-            ->get(['r.nama_ruangan', 'p.jenis_permintaan', 'p.status_permintaan', 'p.tanggal_permintaan'])
-            ->map(function ($request) {
-                return sprintf(
-                    '%s - %s (%s, %s)',
-                    $request->nama_ruangan,
-                    ucfirst($request->jenis_permintaan),
-                    str_replace('_', ' ', ucfirst($request->status_permintaan)),
-                    $request->tanggal_permintaan
-                );
-            })
-            ->all();
-
-        $dashboard['headline'] = 'Lihat kondisi inventaris sekolah dan ambil keputusan akhir pengajuan dari data terbaru sistem.';
-        $dashboard['summary_cards'] = [
-            ['label' => 'Total Ruangan', 'value' => number_format($roomCount).' Ruangan', 'tone' => 'soft'],
-            ['label' => 'Pengajuan Final', 'value' => number_format((int) ($requestStats->final ?? 0)).' Permintaan', 'tone' => 'solid'],
-            ['label' => 'Menunggu Keputusan', 'value' => number_format((int) ($requestStats->menunggu_keputusan ?? 0)).' Permintaan', 'tone' => 'warn'],
-            ['label' => 'Disetujui Hari Ini', 'value' => number_format((int) ($requestStats->disetujui_hari_ini ?? 0)).' Permintaan', 'tone' => 'soft'],
-        ];
-        $dashboard['panels'][0]['items'] = [
-            'Total ruangan sekolah saat ini: '.number_format($roomCount).'.',
-            'Pengajuan final diambil dari permintaan berstatus disetujui admin.',
-            'Gunakan kartu menunggu keputusan untuk prioritas persetujuan owner.',
-        ];
-        $dashboard['panels'][1]['items'] = $latestRequests !== []
-            ? $latestRequests
-            : ['Belum ada pengajuan terbaru yang tercatat.'];
-
-        return $dashboard;
-    }
-
-    /**
-     * Populate level 4 dashboard with real master-data and operational data.
-     *
-     * @param  array<string, mixed>  $dashboard
-     * @return array<string, mixed>
-     */
-    private function buildLevelFourDashboard(array $dashboard): array
-    {
         $userCount = (int) DB::table('users')->count();
         $inventoryStats = DB::table('inventaris_ruangan')
             ->selectRaw('COALESCE(SUM(jumlah_baik + jumlah_rusak), 0) as total_item')
@@ -888,7 +1027,7 @@ class Control extends Controller
             })
             ->all();
 
-        $dashboard['headline'] = 'Kelola data master dan operasional berdasarkan data terbaru dari sistem.';
+        $dashboard['headline'] = 'Kelola data master, pantau sistem, dan realisasikan pengajuan yang sudah disetujui berdasarkan data terbaru.';
         $dashboard['summary_cards'] = [
             ['label' => 'Total User', 'value' => number_format($userCount).' Akun', 'tone' => 'soft'],
             ['label' => 'Total Inventaris', 'value' => number_format((int) ($inventoryStats->total_item ?? 0)).' Item', 'tone' => 'solid'],
@@ -898,11 +1037,103 @@ class Control extends Controller
         $dashboard['panels'][0]['items'] = [
             'Total akun aktif terbaca dari tabel users.',
             'Total inventaris dihitung dari akumulasi inventaris_ruangan.',
-            'Realisasi fokus pada permintaan berstatus disetujui owner.',
+            'Realisasi fokus pada permintaan berstatus disetujui kepala sekolah.',
         ];
         $dashboard['panels'][1]['items'] = $latestOperations !== []
             ? $latestOperations
             : ['Belum ada aktivitas operasional yang tercatat.'];
+
+        return $dashboard;
+    }
+
+    /**
+     * Populate level 4 dashboard with real master-data and operational data.
+     *
+     * @param  array<string, mixed>  $dashboard
+     * @return array<string, mixed>
+     */
+    private function buildLevelFourDashboard(array $dashboard): array
+    {
+        $roomCount = (int) DB::table('ruangan')->count();
+        $inventoryStats = DB::table('inventaris_ruangan')
+            ->selectRaw('COALESCE(SUM(jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(jumlah_rusak), 0) as total_rusak')
+            ->selectRaw('COALESCE(SUM(jumlah_baik + jumlah_rusak), 0) as total_item')
+            ->first();
+        $requestStats = DB::table('permintaan')
+            ->selectRaw('SUM(CASE WHEN status_permintaan NOT IN ("selesai", "ditolak_admin", "ditolak_owner", "ditolak") THEN 1 ELSE 0 END) as aktif')
+            ->selectRaw('SUM(CASE WHEN status_permintaan = "disetujui_admin" THEN 1 ELSE 0 END) as menunggu_persetujuan')
+            ->first();
+        $priorityRequests = DB::table('permintaan as p')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
+            ->leftJoin('detail_permintaan as dp', 'dp.id_permintaan', '=', 'p.id_permintaan')
+            ->leftJoin('barang as b', 'b.id_barang', '=', 'dp.id_barang')
+            ->where('p.status_permintaan', 'disetujui_admin')
+            ->orderByDesc('p.tanggal_permintaan')
+            ->orderByDesc('p.id_permintaan')
+            ->limit(3)
+            ->get([
+                'r.nama_ruangan',
+                'p.jenis_permintaan',
+                'dp.jumlah_diminta',
+                'b.nama_barang',
+            ])
+            ->map(function ($request) {
+                $barang = $request->nama_barang ? ucfirst((string) $request->nama_barang) : ucfirst((string) $request->jenis_permintaan);
+
+                return sprintf(
+                    '%s - %s unit (%s). Status: Disetujui wali kelas.',
+                    $barang,
+                    number_format((int) ($request->jumlah_diminta ?? 0)),
+                    $request->nama_ruangan
+                );
+            })
+            ->all();
+        $roomDistribution = DB::table('ruangan')
+            ->selectRaw('LOWER(jenis_ruangan) as jenis_ruangan')
+            ->selectRaw('COUNT(*) as total')
+            ->groupBy(DB::raw('LOWER(jenis_ruangan)'))
+            ->get()
+            ->map(function ($row) {
+                return ucfirst((string) $row->jenis_ruangan).': '.number_format((int) $row->total).' ruangan';
+            })
+            ->all();
+        $latestActivity = DB::table('permintaan as p')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
+            ->orderByDesc('p.tanggal_permintaan')
+            ->orderByDesc('p.id_permintaan')
+            ->limit(3)
+            ->get(['r.nama_ruangan', 'p.jenis_permintaan', 'p.status_permintaan', 'p.tanggal_permintaan'])
+            ->map(function ($request) {
+                return sprintf(
+                    '%s - %s (%s, %s)',
+                    $request->nama_ruangan,
+                    ucfirst($request->jenis_permintaan),
+                    str_replace('_', ' ', ucfirst($request->status_permintaan)),
+                    $request->tanggal_permintaan
+                );
+            })
+            ->all();
+
+        $dashboard['headline'] = 'Pantau kondisi infrastruktur sekolah dan kelola persetujuan pengajuan dari seluruh kelas.';
+        $dashboard['summary_cards'] = [
+            ['label' => 'Total Ruangan', 'value' => number_format($roomCount).' Ruangan', 'tone' => 'soft'],
+            ['label' => 'Total Barang', 'value' => number_format((int) ($inventoryStats->total_item ?? 0)).' Item', 'tone' => 'solid'],
+            ['label' => 'Pengajuan Aktif', 'value' => number_format((int) ($requestStats->aktif ?? 0)).' Permintaan', 'tone' => 'soft'],
+            ['label' => 'Menunggu Persetujuan', 'value' => number_format((int) ($requestStats->menunggu_persetujuan ?? 0)).' Permintaan', 'tone' => 'warn'],
+        ];
+        $dashboard['panels'][0]['items'] = [
+            ...($priorityRequests !== [] ? $priorityRequests : ['Belum ada pengajuan prioritas yang menunggu persetujuan akhir.']),
+        ];
+        $dashboard['panels'][1]['title'] = 'Ringkasan Sekolah';
+        $dashboard['panels'][1]['items'] = array_merge(
+            [
+                number_format((int) ($inventoryStats->total_baik ?? 0)).' barang dalam kondisi baik.',
+                number_format((int) ($inventoryStats->total_rusak ?? 0)).' barang perlu perhatian.',
+            ],
+            $roomDistribution !== [] ? $roomDistribution : ['Belum ada data distribusi ruangan.'],
+            $latestActivity !== [] ? array_slice($latestActivity, 0, 2) : ['Belum ada aktivitas terbaru yang tercatat.']
+        );
 
         return $dashboard;
     }
@@ -983,6 +1214,23 @@ class Control extends Controller
                     ->all(),
             ];
         })->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $user
+     */
+    private function findAdminOwnedRequest(array $user, int $requestId): ?object
+    {
+        $roomIds = $this->getActiveAssignmentsForUser($user)->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
+
+        if ($roomIds === []) {
+            return null;
+        }
+
+        return DB::table('permintaan')
+            ->where('id_permintaan', $requestId)
+            ->whereIn('id_ruangan', $roomIds)
+            ->first();
     }
 
     private function generateRequestCode(): string

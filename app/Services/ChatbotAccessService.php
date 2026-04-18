@@ -677,6 +677,20 @@ class ChatbotAccessService
             }
         }
 
+        if ($this->containsAny($text, [
+            'tampilkan',
+            'lihat',
+            'berapa',
+            'total',
+            'data',
+            'status',
+            'tolong',
+            'mohon',
+            'cek',
+        ])) {
+            return null;
+        }
+
         return match (true) {
             $this->containsAny($text, ['jumlah barang tidak sesuai', 'data tidak muncul', 'data salah', 'barang tidak tercatat', 'data beda', 'data kursi beda', 'tidak sesuai'])
                 || (
@@ -776,7 +790,7 @@ class ChatbotAccessService
     private function buildGuidedLeafAnswer(array $context, string $answerKey): string
     {
         return match ($answerKey) {
-            'room_lookup' => $this->buildRoomAnswer($context),
+            'room_lookup' => $this->buildRoomAnswer($context, $message),
             'inventory_summary' => $this->buildInventoryAnswer($context, 'inventaris'),
             'inventory_detail' => $this->buildInventoryAnswer($context, 'semua data barang di kelas saya'),
             'request_lookup' => $this->buildRequestAnswer($context),
@@ -924,8 +938,8 @@ class ChatbotAccessService
         return match ($level) {
             1 => ['level' => 1, 'name' => 'Ketua Kelas'],
             2 => ['level' => 2, 'name' => 'Wali Kelas'],
-            3 => ['level' => 3, 'name' => 'Pengelola Sistem'],
-            4 => ['level' => 4, 'name' => 'Owner'],
+            3 => ['level' => 3, 'name' => 'Superadmin'],
+            4 => ['level' => 4, 'name' => 'Kepala Sekolah'],
             default => ['level' => $level, 'name' => 'Tidak dikenal'],
         };
     }
@@ -989,7 +1003,7 @@ class ChatbotAccessService
                 ? 'Akses terbatas ke kelas sendiri dan lingkup wali kelas: '.implode(', ', $roomNames).'.'
                 : 'Akses terbatas ke kelas sendiri dan data dalam lingkup wali kelas.',
             3 => 'Akses penuh ke seluruh data sistem melalui layer backend yang aman.',
-            4 => 'Akses baca ke seluruh data sekolah tanpa izin tambah, ubah, atau hapus.',
+            4 => 'Akses baca kepala sekolah ke seluruh data sekolah tanpa izin tambah, ubah, atau hapus.',
             default => 'Akses belum dikenali.',
         };
     }
@@ -1218,7 +1232,7 @@ class ChatbotAccessService
             'update_user_level' => $this->buildUpdateUserLevelAnswer($message),
             'delete_user' => $this->buildDeleteUserAnswer($message),
             'help_navigation', 'general_help' => $this->buildHelpAnswer($context),
-            'room_lookup' => $this->buildRoomAnswer($context),
+            'room_lookup' => $this->buildRoomAnswer($context, $message),
             'inventory_lookup' => $this->buildInventoryAnswer($context, $message),
             'request_lookup' => $this->buildRequestAnswer($context),
             'cross_scope_data' => $this->buildGlobalReadAnswer($context, $message),
@@ -1272,8 +1286,8 @@ class ChatbotAccessService
         return match ($level) {
             1 => $base.' Untuk akunmu, saya fokus pada data diri sendiri, ruangan yang ditugaskan, dan pengajuan milikmu.',
             2 => $base.' Untuk akun wali kelas, saya bisa membantu data kelas sendiri dan lingkup penugasan wali kelas.',
-            3 => $base.' Untuk pengelola sistem, saya juga bisa membantu ringkasan global sistem dan konteks operasional yang lebih luas.',
-            4 => $base.' Untuk owner, saya bisa membantu akses baca seluruh data sekolah tanpa aksi tambah, ubah, atau hapus.',
+            3 => $base.' Untuk akun superadmin, saya juga bisa membantu ringkasan global sistem dan konteks operasional yang lebih luas.',
+            4 => $base.' Untuk akun kepala sekolah, saya bisa membantu menampilkan data seluruh kelas dan ringkasan sekolah secara baca saja.',
             default => $base,
         };
     }
@@ -1329,7 +1343,7 @@ class ChatbotAccessService
             1 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Saya', 'Inventaris Kelas', 'Pengajuan', 'Akun', 'Penggunaan Dashboard']).'. Kamu juga bisa memilih kategori bantuan yang tersedia di panel chat.',
             2 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Binaan', 'Inventaris Kelas', 'Pengajuan Masuk', 'Riwayat Verifikasi']).' sesuai aksesmu.',
             3 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Data User', 'Data Ruangan', 'Data Barang', 'Data Inventaris', 'Realisasi Pengajuan', 'Asisten Sistem', 'Laporan']).' sesuai akses akunmu.',
-            4 => 'Saya bisa membantu untuk melihat ringkasan melalui '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Asisten Sistem', 'Laporan']).' sesuai akses baca akunmu.',
+            4 => 'Saya bisa membantu untuk melihat data melalui '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Laporan']).'. Saya juga bisa menampilkan data kelas tertentu dan menghitung total barang dari semua kelas.',
             default => 'Saya siap membantu soal inventaris, ruangan, pengajuan, dan penggunaan dashboard sesuai akses akunmu.',
         };
     }
@@ -1337,9 +1351,27 @@ class ChatbotAccessService
     /**
      * @param  array<string, mixed>  $context
      */
-    private function buildRoomAnswer(array $context): string
+    private function buildRoomAnswer(array $context, string $message = ''): string
     {
         $level = (int) ($context['role']['level'] ?? 0);
+        $text = mb_strtolower($message);
+
+        if ($level === 4) {
+            $mentionedLabels = $this->mentionedClassLabels($text);
+            $mentionedRooms = $this->mentionedClassRooms($text);
+
+            if ($this->containsAny($text, ['semua kelas', 'seluruh kelas', 'daftar kelas', 'kelas apa saja', 'kelas apa aja'])) {
+                return $this->buildAllClassListAnswer();
+            }
+
+            if ($mentionedRooms->isNotEmpty()) {
+                return $this->buildClassRoomDetailAnswer($mentionedRooms);
+            }
+
+            if ($mentionedLabels !== []) {
+                return 'Data kelas yang Anda minta belum ditemukan di sistem. Silakan periksa kembali nama kelas yang ingin ditampilkan.';
+            }
+        }
 
         if (in_array($level, [3, 4], true)) {
             $totalRooms = (int) DB::table('ruangan')->count();
@@ -1373,7 +1405,32 @@ class ChatbotAccessService
         $text = mb_strtolower($message);
         $wantsDetail = $this->containsAny($text, ['semua data barang', 'semua barang', 'detail barang', 'data barang', 'barang di kelas saya', 'inventaris kelas saya']);
 
-        if (in_array($level, [3, 4], true)) {
+        if ($level === 4) {
+            $mentionedLabels = $this->mentionedClassLabels($text);
+            $mentionedRooms = $this->mentionedClassRooms($text);
+
+            if ($this->containsAny($text, [
+                'total seluruh barang dari semua kelas',
+                'total seluruh barang semua kelas',
+                'total semua barang dari semua kelas',
+                'total semua barang semua kelas',
+                'total barang semua kelas',
+                'total barang seluruh kelas',
+                'total seluruh barang',
+            ])) {
+                return $this->buildAllClassInventoryTotalAnswer();
+            }
+
+            if ($mentionedRooms->isNotEmpty()) {
+                return $this->buildClassInventoryDetailAnswer($mentionedRooms);
+            }
+
+            if ($mentionedLabels !== []) {
+                return 'Inventaris untuk kelas yang Anda minta belum ditemukan di sistem. Silakan periksa kembali nama kelasnya.';
+            }
+        }
+
+        if ($level === 3) {
             $summary = DB::table('inventaris_ruangan')
                 ->selectRaw('COALESCE(SUM(jumlah_baik), 0) as total_baik, COALESCE(SUM(jumlah_rusak), 0) as total_rusak')
                 ->first();
@@ -1427,8 +1484,8 @@ class ChatbotAccessService
 
             $lines = $details->map(fn ($row) => $row->nama_ruangan.': '.ucfirst($row->nama_barang).' (baik '.$row->jumlah_baik.', rusak '.$row->jumlah_rusak.')')->all();
 
-        return 'Berikut data barang dalam kelasmu: '.implode(' | ', $lines).'.';
-    }
+            return 'Berikut data barang dalam kelasmu: '.implode(' | ', $lines).'.';
+        }
 
         $lines = $summary->map(fn ($row) => $row->nama_ruangan.': '.$row->total_baik.' baik, '.$row->total_rusak.' rusak')->all();
 
@@ -1513,7 +1570,7 @@ class ChatbotAccessService
         $level = (int) ($context['role']['level'] ?? 0);
 
         if ($level === 3) {
-            return 'Akun pengelola sistem memiliki hak aksi tertinggi. Saat ini chatbot sudah mulai mendukung aksi eksplisit untuk pengelolaan user, dan aksi sistem lain bisa ditambahkan bertahap dengan validasi backend.';
+            return 'Akun superadmin memiliki hak aksi tertinggi. Saat ini chatbot sudah mulai mendukung aksi eksplisit untuk pengelolaan user, dan aksi sistem lain bisa ditambahkan bertahap dengan validasi backend.';
         }
 
         return 'Akun ini hanya memiliki akses baca atau bantuan terbatas, jadi aksi tambah, ubah, dan hapus tidak tersedia lewat chatbot.';
@@ -1606,10 +1663,8 @@ class ChatbotAccessService
      */
     private function extractMentionedScopes(string $text): array
     {
-        preg_match_all('/\b(?:kelas\s*)?([7-9][a-c]|rpl\s*xii?a?|rpl\s*xiib|bdp\s*xii?|akl\s*xii?)\b/i', $text, $matches);
-
-        return collect($matches[1] ?? [])
-            ->map(fn ($value) => strtoupper(str_replace(' ', '', trim($value))))
+        return $this->mentionedClassRooms($text)
+            ->map(fn ($room) => $this->normalizeScopeToken((string) $room->nama_ruangan))
             ->unique()
             ->values()
             ->all();
@@ -1701,7 +1756,9 @@ class ChatbotAccessService
             'realisasi',
             'data',
             'wali kelas',
+            'kepala sekolah',
             'owner',
+            'superadmin',
             'pengelola sistem',
             'sistem',
             'login',
@@ -1713,6 +1770,211 @@ class ChatbotAccessService
             'inventaris kelas',
             'penggunaan dashboard',
         ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function classRoomCatalog()
+    {
+        return DB::table('ruangan')
+            ->where('jenis_ruangan', 'kelas')
+            ->orderBy('nama_ruangan')
+            ->get(['id_ruangan', 'nama_ruangan', 'kode_ruangan', 'jenis_ruangan']);
+    }
+
+    private function normalizeScopeToken(string $value): string
+    {
+        $normalized = mb_strtoupper($value);
+        $normalized = str_replace([' ', '-', '_'], '', $normalized);
+
+        return preg_replace('/[^A-Z0-9]/', '', $normalized) ?? '';
+    }
+
+    /**
+     * @return array<string, object>
+     */
+    private function classRoomAliasMap(): array
+    {
+        $aliasMap = [];
+
+        foreach ($this->classRoomCatalog() as $room) {
+            $nameAlias = $this->normalizeScopeToken((string) $room->nama_ruangan);
+            $codeAlias = $this->normalizeScopeToken((string) $room->kode_ruangan);
+            $aliases = [$nameAlias, $codeAlias];
+
+            if (str_starts_with($nameAlias, 'KELAS')) {
+                $aliases[] = substr($nameAlias, 5);
+            }
+
+            if (str_starts_with($codeAlias, 'KLS')) {
+                $aliases[] = substr($codeAlias, 3);
+            }
+
+            $aliases = array_merge($aliases, $this->numericAliasesForClass((string) $room->nama_ruangan));
+
+            foreach (array_filter(array_unique($aliases)) as $alias) {
+                $aliasMap[$alias] = $room;
+            }
+        }
+
+        uksort($aliasMap, fn ($left, $right) => strlen($right) <=> strlen($left));
+
+        return $aliasMap;
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mentionedClassRooms(string $message)
+    {
+        $matchedRooms = collect();
+        $aliasMap = $this->classRoomAliasMap();
+
+        foreach ($this->mentionedClassLabels($message) as $match) {
+            $alias = $this->normalizeScopeToken($match);
+
+            if (str_starts_with($alias, 'KELAS')) {
+                $alias = substr($alias, 5);
+            }
+
+            if (isset($aliasMap[$alias])) {
+                $matchedRooms->push($aliasMap[$alias]);
+            }
+        }
+
+        return $matchedRooms
+            ->unique(fn ($room) => (int) $room->id_ruangan)
+            ->values();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function mentionedClassLabels(string $message): array
+    {
+        preg_match_all(
+            '/\b(?:kelas\s*[7-9][a-c]|[7-9][a-c]|rpl\s*xiib|rpl\s*xiia|rpl\s*xii|rpl\s*xi|rpl\s*x|rpl\s*12b|rpl\s*12a|rpl\s*12|rpl\s*11|rpl\s*10|bdp\s*xii|bdp\s*xi|bdp\s*x|bdp\s*12|bdp\s*11|bdp\s*10|akl\s*xiib|akl\s*xiia|akl\s*xii|akl\s*xi|akl\s*x|akl\s*12b|akl\s*12a|akl\s*12|akl\s*11|akl\s*10)\b/i',
+            $message,
+            $matches
+        );
+
+        return array_values(array_unique($matches[0] ?? []));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function numericAliasesForClass(string $roomName): array
+    {
+        $normalized = $this->normalizeScopeToken($roomName);
+
+        return match ($normalized) {
+            'RPLX' => ['RPL10'],
+            'RPLXI' => ['RPL11'],
+            'RPLXIIA' => ['RPL12A', 'RPL12'],
+            'RPLXIIB' => ['RPL12B'],
+            'BDPX' => ['BDP10'],
+            'BDPXI' => ['BDP11'],
+            'BDPXII' => ['BDP12'],
+            'AKLX' => ['AKL10'],
+            'AKLXI' => ['AKL11'],
+            'AKLXII' => ['AKL12'],
+            default => [],
+        };
+    }
+
+    private function buildAllClassListAnswer(): string
+    {
+        $classNames = $this->classRoomCatalog()
+            ->pluck('nama_ruangan')
+            ->map(fn ($name) => (string) $name)
+            ->all();
+
+        return 'Berikut daftar kelas yang saat ini tercatat di sistem: '.implode(', ', $classNames).'.';
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $rooms
+     */
+    private function buildClassRoomDetailAnswer($rooms): string
+    {
+        $inventorySummary = DB::table('inventaris_ruangan')
+            ->whereIn('id_ruangan', $rooms->pluck('id_ruangan')->all())
+            ->selectRaw('id_ruangan, COALESCE(SUM(jumlah_baik + jumlah_rusak), 0) as total_barang')
+            ->selectRaw('COALESCE(SUM(jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(jumlah_rusak), 0) as total_rusak')
+            ->groupBy('id_ruangan')
+            ->get()
+            ->keyBy('id_ruangan');
+
+        $lines = $rooms->map(function ($room) use ($inventorySummary) {
+            $summary = $inventorySummary->get($room->id_ruangan);
+
+            return sprintf(
+                '%s (%s): total %d barang, %d kondisi baik, %d perlu perhatian',
+                $room->nama_ruangan,
+                $room->kode_ruangan,
+                (int) ($summary->total_barang ?? 0),
+                (int) ($summary->total_baik ?? 0),
+                (int) ($summary->total_rusak ?? 0)
+            );
+        })->all();
+
+        return 'Data kelas yang Anda minta: '.implode(' | ', $lines).'.';
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $rooms
+     */
+    private function buildClassInventoryDetailAnswer($rooms): string
+    {
+        $details = DB::table('inventaris_ruangan as ir')
+            ->join('barang as b', 'b.id_barang', '=', 'ir.id_barang')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'ir.id_ruangan')
+            ->whereIn('ir.id_ruangan', $rooms->pluck('id_ruangan')->all())
+            ->orderBy('r.nama_ruangan')
+            ->orderBy('b.nama_barang')
+            ->get([
+                'r.id_ruangan',
+                'r.nama_ruangan',
+                'b.nama_barang',
+                'ir.jumlah_baik',
+                'ir.jumlah_rusak',
+            ])
+            ->groupBy('id_ruangan');
+
+        $lines = $rooms->map(function ($room) use ($details) {
+            $items = collect($details->get($room->id_ruangan, []))
+                ->map(function ($item) {
+                    $total = (int) $item->jumlah_baik + (int) $item->jumlah_rusak;
+
+                    return ucfirst((string) $item->nama_barang).' '.$total;
+                })
+                ->implode(', ');
+
+            return $room->nama_ruangan.': '.($items !== '' ? $items : 'belum ada inventaris tercatat');
+        })->all();
+
+        return 'Berikut data inventaris kelas yang Anda minta: '.implode(' | ', $lines).'.';
+    }
+
+    private function buildAllClassInventoryTotalAnswer(): string
+    {
+        $summary = DB::table('inventaris_ruangan as ir')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'ir.id_ruangan')
+            ->where('r.jenis_ruangan', 'kelas')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_baik + ir.jumlah_rusak), 0) as total_barang')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_rusak), 0) as total_rusak')
+            ->first();
+
+        return sprintf(
+            'Total seluruh barang dari semua kelas saat ini adalah %d barang, dengan %d kondisi baik dan %d perlu perhatian.',
+            (int) ($summary->total_barang ?? 0),
+            (int) ($summary->total_baik ?? 0),
+            (int) ($summary->total_rusak ?? 0)
+        );
     }
 
     private function formatMenuName(string $menuName): string

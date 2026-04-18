@@ -368,7 +368,7 @@
             ],
             2 => [
                 ['label' => 'Kelas Saya', 'icon' => 'bi bi-building', 'url' => $safeRoute('admin.class.inventory')],
-                ['label' => 'Pengajuan Masuk', 'icon' => 'bi bi-inbox-fill', 'url' => $safeRoute('admin.requests.inbox')],
+                ['label' => 'Pengajuan Kelas', 'icon' => 'bi bi-inbox-fill', 'url' => $safeRoute('admin.requests.inbox')],
                 ['label' => 'Riwayat Pengajuan', 'icon' => 'bi bi-patch-check-fill', 'url' => $safeRoute('admin.requests.history')],
             ],
             3 => [
@@ -377,14 +377,12 @@
                 ['label' => 'Data Barang', 'icon' => 'bi bi-grid-fill', 'url' => $safeRoute('superadmin.items')],
                 ['label' => 'Data Inventaris', 'icon' => 'bi bi-box-seam-fill', 'url' => $safeRoute('superadmin.inventories')],
                 ['label' => 'Realisasi Pengajuan', 'icon' => 'bi bi-list-check', 'url' => $safeRoute('superadmin.requests.realization')],
-                ['label' => 'Asisten Sistem', 'icon' => 'bi bi-robot', 'url' => $safeRoute('assistant.index')],
                 ['label' => 'Laporan', 'icon' => 'bi bi-bar-chart-line-fill', 'url' => $safeRoute('superadmin.reports')],
             ],
             4 => [
                 ['label' => 'Semua Ruangan', 'icon' => 'bi bi-buildings-fill', 'url' => $safeRoute('owner.rooms')],
                 ['label' => 'Inventaris Sekolah', 'icon' => 'bi bi-boxes', 'url' => $safeRoute('owner.inventories')],
                 ['label' => 'Persetujuan Akhir', 'icon' => 'bi bi-clipboard2-check-fill', 'url' => $safeRoute('owner.requests.approval')],
-                ['label' => 'Asisten Sistem', 'icon' => 'bi bi-robot', 'url' => $safeRoute('assistant.index')],
                 ['label' => 'Laporan', 'icon' => 'bi bi-bar-chart-fill', 'url' => $safeRoute('owner.reports')],
             ],
         ];

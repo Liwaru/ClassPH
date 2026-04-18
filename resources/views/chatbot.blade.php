@@ -31,16 +31,20 @@
 
     .app-shell.chatbot-open .content-area,
     .app-shell.chatbot-open .kelas-page,
+    .app-shell.chatbot-open .wali-page,
     .app-shell.chatbot-open .request-page,
-    .app-shell.chatbot-open .history-page {
+    .app-shell.chatbot-open .history-page,
+    .app-shell.chatbot-open .inbox-page {
         width: calc(100% - 320px - var(--chatbot-panel-width) - 16px);
         padding-right: 1.6rem;
     }
 
     .app-shell.sidebar-collapsed.chatbot-open .content-area,
     .app-shell.sidebar-collapsed.chatbot-open .kelas-page,
+    .app-shell.sidebar-collapsed.chatbot-open .wali-page,
     .app-shell.sidebar-collapsed.chatbot-open .request-page,
-    .app-shell.sidebar-collapsed.chatbot-open .history-page {
+    .app-shell.sidebar-collapsed.chatbot-open .history-page,
+    .app-shell.sidebar-collapsed.chatbot-open .inbox-page {
         width: calc(100% - 88px - var(--chatbot-panel-width) - 16px);
         padding-right: 1.6rem;
     }
@@ -410,15 +414,19 @@
     @media (max-width: 1100px) {
         .app-shell.chatbot-open .content-area,
         .app-shell.chatbot-open .kelas-page,
+        .app-shell.chatbot-open .wali-page,
         .app-shell.chatbot-open .request-page,
-        .app-shell.chatbot-open .history-page {
+        .app-shell.chatbot-open .history-page,
+        .app-shell.chatbot-open .inbox-page {
             width: calc(100% - 320px - 360px);
         }
 
         .app-shell.sidebar-collapsed.chatbot-open .content-area,
         .app-shell.sidebar-collapsed.chatbot-open .kelas-page,
+        .app-shell.sidebar-collapsed.chatbot-open .wali-page,
         .app-shell.sidebar-collapsed.chatbot-open .request-page,
-        .app-shell.sidebar-collapsed.chatbot-open .history-page {
+        .app-shell.sidebar-collapsed.chatbot-open .history-page,
+        .app-shell.sidebar-collapsed.chatbot-open .inbox-page {
             width: calc(100% - 88px - 360px);
         }
     }
@@ -428,10 +436,14 @@
         .app-shell.sidebar-collapsed.chatbot-open .content-area,
         .app-shell.chatbot-open .kelas-page,
         .app-shell.sidebar-collapsed.chatbot-open .kelas-page,
+        .app-shell.chatbot-open .wali-page,
+        .app-shell.sidebar-collapsed.chatbot-open .wali-page,
         .app-shell.chatbot-open .request-page,
         .app-shell.sidebar-collapsed.chatbot-open .request-page,
         .app-shell.chatbot-open .history-page,
-        .app-shell.sidebar-collapsed.chatbot-open .history-page {
+        .app-shell.sidebar-collapsed.chatbot-open .history-page,
+        .app-shell.chatbot-open .inbox-page,
+        .app-shell.sidebar-collapsed.chatbot-open .inbox-page {
             width: 100%;
             padding-right: 1rem;
         }

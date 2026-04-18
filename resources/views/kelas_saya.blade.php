@@ -86,16 +86,24 @@
         .room-section-title { font-size:1.02rem; font-weight:800; color:#172033; margin-bottom:0.85rem; }
         .latest-meta { color:#7b8794; font-size:0.84rem; }
         .inventory-table-wrap {
-            overflow-x: auto;
+            overflow-x: hidden;
             border: 1px solid #f3e3db;
             border-radius: 22px;
             background: linear-gradient(180deg, #fffdfa, #ffffff);
         }
-        .inventory-table { width:100%; border-collapse:separate; border-spacing:0; min-width:720px; }
+        .inventory-table { width:100%; border-collapse:separate; border-spacing:0; table-layout: fixed; }
         .inventory-table th, .inventory-table td { text-align:left; padding:1rem 1rem; border-bottom:1px solid #f5e7de; vertical-align:top; word-break: break-word; }
         .inventory-table th { color:#6b7280; font-size:0.82rem; text-transform:uppercase; letter-spacing:0.06em; background:#fff8f4; }
         .inventory-table td { color:#344054; font-size:0.95rem; background:#ffffff; }
         .inventory-table tbody tr:last-child td { border-bottom:none; }
+        .inventory-table th:nth-child(1),
+        .inventory-table td:nth-child(1) { width: 28%; }
+        .inventory-table th:nth-child(2),
+        .inventory-table td:nth-child(2) { width: 14%; }
+        .inventory-table th:nth-child(3),
+        .inventory-table td:nth-child(3) { width: 18%; }
+        .inventory-table th:nth-child(4),
+        .inventory-table td:nth-child(4) { width: 40%; }
         .inventory-name { font-weight:700; color:#172033; }
         .inventory-count { font-weight:700; }
         .room-main { width: 100%; }
@@ -141,6 +149,8 @@
         @media (max-width: 860px) {
             .kelas-page { margin-left: 0; padding:1.2rem 1rem 2rem; width: 100%; }
             .summary-grid { grid-template-columns: 1fr; }
+            .inventory-table-wrap { overflow-x: auto; }
+            .inventory-table { min-width: 720px; table-layout: auto; }
         }
     </style>
 </head>

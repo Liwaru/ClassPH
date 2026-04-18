@@ -110,13 +110,13 @@
         }
 
         .table-card { overflow: hidden; }
-        .table-wrap { overflow-x: auto; }
+        .table-wrap { overflow-x: hidden; }
 
         .request-table {
             width: 100%;
-            min-width: 980px;
             border-collapse: separate;
             border-spacing: 0;
+            table-layout: fixed;
         }
 
         .request-table th,
@@ -125,6 +125,7 @@
             padding: 1rem 1rem;
             border-bottom: 1px solid #f4e6dc;
             vertical-align: top;
+            word-break: break-word;
         }
 
         .request-table th {
@@ -138,6 +139,13 @@
         .request-table td {
             color: #344054;
             background: #ffffff;
+        }
+
+        .request-table td .badge {
+            max-width: 100%;
+            text-align: center;
+            white-space: normal;
+            line-height: 1.4;
         }
 
         .request-code {
@@ -156,6 +164,21 @@
             font-size: 0.84rem;
             margin-top: 0.2rem;
         }
+
+        .request-table th:nth-child(1),
+        .request-table td:nth-child(1) { width: 23%; }
+        .request-table th:nth-child(2),
+        .request-table td:nth-child(2) { width: 12%; }
+        .request-table th:nth-child(3),
+        .request-table td:nth-child(3) { width: 11%; }
+        .request-table th:nth-child(4),
+        .request-table td:nth-child(4) { width: 14%; }
+        .request-table th:nth-child(5),
+        .request-table td:nth-child(5) { width: 14%; }
+        .request-table th:nth-child(6),
+        .request-table td:nth-child(6) { width: 10%; }
+        .request-table th:nth-child(7),
+        .request-table td:nth-child(7) { width: 16%; }
 
         .badge {
             display: inline-flex;
@@ -194,6 +217,9 @@
                 width: 100%;
                 padding: 1.2rem 1rem 2rem;
             }
+
+            .table-wrap { overflow-x: auto; }
+            .request-table { min-width: 920px; table-layout: auto; }
         }
     </style>
 </head>
@@ -262,6 +288,11 @@
                             </table>
                         </div>
                     </section>
+
+                    <section class="empty-card" id="filteredEmptyState" style="display:none; margin-top: 1rem;">
+                        <div class="empty-title">Tidak ada data</div>
+                        <div class="empty-copy">Belum ada data pengajuan yang sesuai dengan filter ini.</div>
+                    </section>
                 @endif
             </div>
         </main>
@@ -272,6 +303,25 @@
         (function () {
             const filterButtons = document.querySelectorAll('.filter-chip');
             const records = document.querySelectorAll('.request-record');
+            const filteredEmptyState = document.getElementById('filteredEmptyState');
+
+            function applyFilter(filter) {
+                let visibleCount = 0;
+
+                records.forEach(function (row) {
+                    const status = row.getAttribute('data-status');
+                    const visible = filter === 'all' || status === filter;
+                    row.style.display = visible ? '' : 'none';
+
+                    if (visible) {
+                        visibleCount += 1;
+                    }
+                });
+
+                if (filteredEmptyState) {
+                    filteredEmptyState.style.display = visibleCount === 0 ? '' : 'none';
+                }
+            }
 
             filterButtons.forEach(function (button) {
                 button.addEventListener('click', function () {
@@ -281,13 +331,11 @@
                         item.classList.toggle('active', item === button);
                     });
 
-                    records.forEach(function (row) {
-                        const status = row.getAttribute('data-status');
-                        const visible = filter === 'all' || status === filter;
-                        row.style.display = visible ? '' : 'none';
-                    });
+                    applyFilter(filter);
                 });
             });
+
+            applyFilter('all');
         })();
     </script>
 </body>
