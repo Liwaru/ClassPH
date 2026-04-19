@@ -131,13 +131,13 @@ class Control extends Controller
                 'Lihat semua pengajuan',
                 'Lihat semua ruangan',
                 'Lihat laporan',
-                'Tinjau persetujuan akhir',
+                'Tinjau persetujuan pengajuan',
             ],
             'panels' => [
                 [
                     'title' => 'Pengajuan Prioritas',
                     'items' => [
-                        'Belum ada pengajuan prioritas yang menunggu persetujuan akhir.',
+                        'Belum ada pengajuan prioritas yang menunggu persetujuan pengajuan.',
                     ],
                 ],
                 [
@@ -255,6 +255,289 @@ class Control extends Controller
             'user' => $user,
             'dashboard' => $dashboard,
             'roomOverviews' => $roomOverviews,
+        ]);
+    }
+
+    public function ownerRooms(Request $request): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $search = trim((string) $request->query('q', ''));
+        $type = strtolower(trim((string) $request->query('type', 'semua')));
+
+        $roomsQuery = DB::table('ruangan')
+            ->select('id_ruangan', 'nama_ruangan', 'kode_ruangan', 'jenis_ruangan')
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where(function ($inner) use ($search) {
+                    $inner->where('nama_ruangan', 'like', '%'.$search.'%')
+                        ->orWhere('kode_ruangan', 'like', '%'.$search.'%');
+                });
+            })
+            ->when($type !== '' && $type !== 'semua', function ($query) use ($type) {
+                $query->whereRaw('LOWER(jenis_ruangan) = ?', [$type]);
+            });
+
+        $this->applyOwnerRoomOrdering($roomsQuery);
+
+        $rooms = $roomsQuery->paginate(9)->withQueryString();
+        $roomIds = collect($rooms->items())->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
+
+        $inventorySummary = DB::table('inventaris_ruangan')
+            ->selectRaw('id_ruangan, COALESCE(SUM(jumlah_baik + jumlah_rusak), 0) as total_barang')
+            ->selectRaw('COALESCE(SUM(jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(jumlah_rusak), 0) as total_rusak')
+            ->groupBy('id_ruangan')
+            ->get()
+            ->keyBy('id_ruangan');
+
+        $activeRequestSummary = DB::table('permintaan')
+            ->whereNotIn('status_permintaan', ['selesai', 'ditolak_admin', 'ditolak_owner', 'ditolak'])
+            ->selectRaw('id_ruangan, COUNT(*) as total_pengajuan_aktif')
+            ->groupBy('id_ruangan')
+            ->get()
+            ->keyBy('id_ruangan');
+
+        $latestRequestSummary = DB::table('permintaan as p')
+            ->leftJoin('detail_permintaan as dp', 'dp.id_permintaan', '=', 'p.id_permintaan')
+            ->leftJoin('barang as b', 'b.id_barang', '=', 'dp.id_barang')
+            ->select(
+                'p.id_ruangan',
+                'p.jenis_permintaan',
+                'p.status_permintaan',
+                'p.tanggal_permintaan',
+                'b.nama_barang'
+            )
+            ->orderByDesc('p.tanggal_permintaan')
+            ->orderByDesc('p.id_permintaan')
+            ->get()
+            ->groupBy('id_ruangan')
+            ->map(function ($rows) {
+                $first = $rows->first();
+
+                if (! $first) {
+                    return null;
+                }
+
+                return [
+                    'barang' => $first->nama_barang ? ucfirst((string) $first->nama_barang) : ucfirst((string) $first->jenis_permintaan),
+                    'status' => $this->formatRequestStatusLabel((string) $first->status_permintaan),
+                    'tanggal' => (string) $first->tanggal_permintaan,
+                ];
+            });
+
+        $inventoryDetails = $roomIds === []
+            ? collect()
+            : DB::table('inventaris_ruangan as ir')
+                ->join('barang as b', 'b.id_barang', '=', 'ir.id_barang')
+                ->whereIn('ir.id_ruangan', $roomIds)
+                ->orderBy('b.nama_barang')
+                ->get([
+                    'ir.id_ruangan',
+                    'b.nama_barang',
+                    'ir.jumlah_baik',
+                    'ir.jumlah_rusak',
+                ])
+                ->groupBy('id_ruangan');
+
+        $roomCards = collect($rooms->items())->map(function ($room) use ($inventorySummary, $activeRequestSummary, $latestRequestSummary, $inventoryDetails) {
+            $inventory = $inventorySummary->get($room->id_ruangan);
+            $request = $activeRequestSummary->get($room->id_ruangan);
+            $detailItems = collect($inventoryDetails->get($room->id_ruangan, []))
+                ->take(5)
+                ->map(function ($item) {
+                    $total = (int) $item->jumlah_baik + (int) $item->jumlah_rusak;
+                    $condition = (int) $item->jumlah_rusak > 0 ? 'Perlu perhatian' : 'Baik';
+
+                    return [
+                        'nama_barang' => ucfirst((string) $item->nama_barang),
+                        'jumlah' => $total,
+                        'kondisi' => $condition,
+                    ];
+                })
+                ->values()
+                ->all();
+
+            $totalBarang = (int) ($inventory->total_barang ?? 0);
+            $totalBaik = (int) ($inventory->total_baik ?? 0);
+            $totalRusak = (int) ($inventory->total_rusak ?? 0);
+            $pengajuanAktif = (int) ($request->total_pengajuan_aktif ?? 0);
+
+            $statusLabel = 'Normal';
+            $statusClass = 'normal';
+
+            if ($totalRusak > 0) {
+                $statusLabel = 'Perlu Perhatian';
+                $statusClass = 'warning';
+            } elseif ($pengajuanAktif > 0) {
+                $statusLabel = 'Ada Pengajuan';
+                $statusClass = 'active';
+            }
+
+            return [
+                'id_ruangan' => (int) $room->id_ruangan,
+                'nama_ruangan' => (string) $room->nama_ruangan,
+                'kode_ruangan' => (string) $room->kode_ruangan,
+                'jenis_ruangan' => ucfirst((string) $room->jenis_ruangan),
+                'total_barang' => $totalBarang,
+                'pengajuan_aktif' => $pengajuanAktif,
+                'barang_baik' => $totalBaik,
+                'barang_rusak' => $totalRusak,
+                'status_label' => $statusLabel,
+                'status_class' => $statusClass,
+                'latest_request' => $latestRequestSummary->get($room->id_ruangan),
+                'detail_items' => $detailItems,
+            ];
+        })->values();
+
+        $summary = [
+            'total_ruangan' => (int) DB::table('ruangan')->count(),
+            'total_barang' => (int) DB::table('inventaris_ruangan')->sum(DB::raw('jumlah_baik + jumlah_rusak')),
+            'ruangan_aktif' => (int) DB::table('ruangan')
+                ->whereIn('id_ruangan', function ($query) {
+                    $query->select('id_ruangan')->from('inventaris_ruangan');
+                })
+                ->count(),
+            'ruangan_dengan_pengajuan_aktif' => (int) DB::table('permintaan')
+                ->whereNotIn('status_permintaan', ['selesai', 'ditolak_admin', 'ditolak_owner', 'ditolak'])
+                ->distinct('id_ruangan')
+                ->count('id_ruangan'),
+            'ruangan_dengan_barang_bermasalah' => (int) DB::table('inventaris_ruangan')
+                ->where('jumlah_rusak', '>', 0)
+                ->distinct('id_ruangan')
+                ->count('id_ruangan'),
+        ];
+
+        return view('semua_ruangan_kepala', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'summary' => $summary,
+            'roomCards' => $roomCards,
+            'rooms' => $rooms,
+            'filters' => [
+                'q' => $search,
+                'type' => $type === '' ? 'semua' : $type,
+            ],
+        ]);
+    }
+
+    public function ownerInventories(Request $request): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $search = trim((string) $request->query('q', ''));
+        $status = strtolower(trim((string) $request->query('status', 'semua')));
+
+        $inventoryBase = DB::table('inventaris_ruangan as ir')
+            ->join('barang as b', 'b.id_barang', '=', 'ir.id_barang')
+            ->selectRaw('b.id_barang, b.nama_barang, b.satuan')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_baik + ir.jumlah_rusak), 0) as total_barang')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_rusak), 0) as total_rusak')
+            ->groupBy('b.id_barang', 'b.nama_barang', 'b.satuan');
+
+        $inventoriesQuery = DB::query()
+            ->fromSub($inventoryBase, 'inventory_totals')
+            ->select('*')
+            ->when($search !== '', function ($query) use ($search) {
+                $query->where('nama_barang', 'like', '%'.$search.'%');
+            })
+            ->when($status === 'baik', function ($query) {
+                $query->where('total_rusak', '=', 0);
+            })
+            ->when($status === 'perlu_perhatian', function ($query) {
+                $query->where('total_rusak', '>', 0);
+            })
+            ->orderBy('nama_barang');
+
+        $inventories = $inventoriesQuery->paginate(10)->withQueryString();
+        $itemIds = collect($inventories->items())
+            ->pluck('id_barang')
+            ->map(fn ($value) => (int) $value)
+            ->all();
+
+        $distributionRows = $itemIds === []
+            ? collect()
+            : DB::table('inventaris_ruangan as ir')
+                ->join('ruangan as r', 'r.id_ruangan', '=', 'ir.id_ruangan')
+                ->whereIn('ir.id_barang', $itemIds)
+                ->selectRaw('ir.id_barang, r.nama_ruangan, r.kode_ruangan')
+                ->selectRaw('COALESCE(SUM(ir.jumlah_baik + ir.jumlah_rusak), 0) as total_barang')
+                ->selectRaw('COALESCE(SUM(ir.jumlah_baik), 0) as total_baik')
+                ->selectRaw('COALESCE(SUM(ir.jumlah_rusak), 0) as total_rusak')
+                ->groupBy('ir.id_barang', 'r.id_ruangan', 'r.nama_ruangan', 'r.kode_ruangan')
+                ->orderBy('r.nama_ruangan')
+                ->get()
+                ->groupBy('id_barang')
+                ->map(function ($rows) {
+                    return collect($rows)
+                        ->map(function ($row) {
+                            return [
+                                'ruangan' => (string) $row->nama_ruangan,
+                                'kode' => (string) $row->kode_ruangan,
+                                'total' => (int) $row->total_barang,
+                                'baik' => (int) $row->total_baik,
+                                'rusak' => (int) $row->total_rusak,
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                });
+
+        $inventoryRows = collect($inventories->items())
+            ->map(function ($item) use ($distributionRows) {
+                $totalBarang = (int) $item->total_barang;
+                $totalBaik = (int) $item->total_baik;
+                $totalRusak = (int) $item->total_rusak;
+
+                return [
+                    'id_barang' => (int) $item->id_barang,
+                    'nama_barang' => ucfirst((string) $item->nama_barang),
+                    'satuan' => $item->satuan ? ucfirst((string) $item->satuan) : '-',
+                    'total_barang' => $totalBarang,
+                    'total_baik' => $totalBaik,
+                    'total_rusak' => $totalRusak,
+                    'status_label' => $totalRusak > 0 ? 'Perlu Perhatian' : 'Baik',
+                    'status_class' => $totalRusak > 0 ? 'warning' : 'good',
+                    'distribution' => $distributionRows->get($item->id_barang, []),
+                ];
+            })
+            ->values();
+
+        $summary = [
+            'total_jenis_barang' => (int) DB::table('inventaris_ruangan')->distinct('id_barang')->count('id_barang'),
+            'total_barang' => (int) DB::table('inventaris_ruangan')->sum(DB::raw('jumlah_baik + jumlah_rusak')),
+            'barang_baik' => (int) DB::table('inventaris_ruangan')->sum('jumlah_baik'),
+            'perlu_perhatian' => (int) DB::table('inventaris_ruangan')->sum('jumlah_rusak'),
+        ];
+
+        return view('inventaris_sekolah_kepala', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'summary' => $summary,
+            'inventories' => $inventories,
+            'inventoryRows' => $inventoryRows,
+            'filters' => [
+                'q' => $search,
+                'status' => $status === '' ? 'semua' : $status,
+            ],
         ]);
     }
 
@@ -780,6 +1063,387 @@ class Control extends Controller
         return redirect()->route('admin.requests.inbox')->with('success', 'Pengajuan ditolak dan alasannya sudah disimpan.');
     }
 
+    public function ownerRequestApproval(Request $request): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $status = strtolower(trim((string) $request->query('status', 'menunggu')));
+
+        if (! in_array($status, ['menunggu', 'disetujui', 'ditolak'], true)) {
+            $status = 'menunggu';
+        }
+
+        $requestCollection = DB::table('permintaan as p')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
+            ->join('users as u', 'u.id_user', '=', 'p.id_user_peminta')
+            ->leftJoin('detail_permintaan as dp', 'dp.id_permintaan', '=', 'p.id_permintaan')
+            ->leftJoin('barang as b', 'b.id_barang', '=', 'dp.id_barang')
+            ->whereIn('p.status_permintaan', ['disetujui_admin', 'disetujui_owner', 'ditolak_owner', 'selesai'])
+            ->orderByDesc('p.tanggal_permintaan')
+            ->orderByDesc('p.id_permintaan')
+            ->get([
+                'p.id_permintaan',
+                'p.kode_permintaan',
+                'p.jenis_permintaan',
+                'p.status_permintaan',
+                'p.catatan_peminta',
+                'p.tanggal_permintaan',
+                'r.nama_ruangan',
+                'r.kode_ruangan',
+                'u.nama as nama_peminta',
+                'dp.jumlah_diminta',
+                'dp.keterangan as detail_keterangan',
+                'b.nama_barang',
+            ])
+            ->groupBy('id_permintaan')
+            ->map(function ($rows) {
+                $first = $rows->first();
+                $items = $rows
+                    ->filter(fn ($row) => ! empty($row->nama_barang))
+                    ->map(fn ($row) => [
+                        'nama_barang' => ucfirst((string) $row->nama_barang),
+                        'jumlah' => (int) ($row->jumlah_diminta ?? 0),
+                        'keterangan' => (string) ($row->detail_keterangan ?? '-'),
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'id_permintaan' => (int) $first->id_permintaan,
+                    'kode_permintaan' => (string) $first->kode_permintaan,
+                    'tanggal_label' => \Carbon\Carbon::parse($first->tanggal_permintaan)->translatedFormat('d M Y'),
+                    'jenis' => $this->formatRequestTypeLabel((string) $first->jenis_permintaan),
+                    'status_raw' => (string) $first->status_permintaan,
+                    'status' => $this->formatRequestStatusLabel((string) $first->status_permintaan),
+                    'status_key' => match ((string) $first->status_permintaan) {
+                        'disetujui_admin' => 'menunggu',
+                        'disetujui_owner', 'selesai' => 'disetujui',
+                        'ditolak_owner' => 'ditolak',
+                        default => 'menunggu',
+                    },
+                    'status_class' => match ((string) $first->status_permintaan) {
+                        'disetujui_admin' => 'process',
+                        'disetujui_owner', 'selesai' => 'approved',
+                        'ditolak_owner' => 'rejected',
+                        default => 'process',
+                    },
+                    'ruangan' => (string) $first->nama_ruangan,
+                    'kode_ruangan' => (string) $first->kode_ruangan,
+                    'peminta' => (string) $first->nama_peminta,
+                    'barang_ringkas' => $items !== [] ? implode(', ', array_map(fn ($item) => $item['nama_barang'], $items)) : '-',
+                    'jumlah_ringkas' => $items !== [] ? array_sum(array_map(fn ($item) => $item['jumlah'], $items)) : 0,
+                    'alasan' => $items[0]['keterangan'] ?? ((string) ($first->catatan_peminta ?? '-')),
+                    'wali_status' => 'Disetujui wali kelas',
+                    'can_action' => (string) $first->status_permintaan === 'disetujui_admin',
+                    'flow' => [
+                        ['label' => 'Ketua Kelas', 'status' => 'done'],
+                        ['label' => 'Wali Kelas', 'status' => 'done'],
+                        [
+                            'label' => 'Kepala Sekolah',
+                            'status' => match ((string) $first->status_permintaan) {
+                                'disetujui_admin' => 'current',
+                                'ditolak_owner' => 'rejected',
+                                'disetujui_owner', 'selesai' => 'done',
+                                default => 'pending',
+                            },
+                        ],
+                    ],
+                ];
+            })
+            ->values();
+
+        $filtered = $requestCollection->filter(function ($row) use ($status) {
+            return match ($status) {
+                'disetujui' => $row['status_key'] === 'disetujui',
+                'ditolak' => $row['status_key'] === 'ditolak',
+                default => $row['status_key'] === 'menunggu',
+            };
+        })->values();
+
+        $currentPage = LengthAwarePaginator::resolveCurrentPage();
+        $perPage = 3;
+        $requests = new LengthAwarePaginator(
+            $filtered->forPage($currentPage, $perPage)->values(),
+            $filtered->count(),
+            $perPage,
+            $currentPage,
+            [
+                'path' => request()->url(),
+                'query' => request()->query(),
+            ]
+        );
+
+        $today = now()->toDateString();
+        $ownerApprovalToday = DB::table('persetujuan_permintaan')
+            ->where('tahap_persetujuan', 'owner')
+            ->whereDate('tanggal_persetujuan', $today)
+            ->selectRaw('SUM(CASE WHEN status_persetujuan = "disetujui" THEN 1 ELSE 0 END) as approved_today')
+            ->selectRaw('SUM(CASE WHEN status_persetujuan = "ditolak" THEN 1 ELSE 0 END) as rejected_today')
+            ->first();
+
+        $summary = [
+            'waiting' => $requestCollection->where('status_key', 'menunggu')->count(),
+            'approved_today' => (int) ($ownerApprovalToday->approved_today ?? 0),
+            'rejected_today' => (int) ($ownerApprovalToday->rejected_today ?? 0),
+        ];
+
+        return view('persetujuan_pengajuan_kepala', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'requests' => $requests,
+            'activeStatus' => $status,
+            'summary' => $summary,
+        ]);
+    }
+
+    public function ownerApproveRequest(Request $request, int $requestId): RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $ownedRequest = $this->findOwnerApprovalRequest($requestId);
+
+        if (! $ownedRequest) {
+            return redirect()->route('owner.requests.approval')->with('error', 'Pengajuan tidak ditemukan untuk tahap persetujuan kepala sekolah.');
+        }
+
+        if ((string) $ownedRequest->status_permintaan !== 'disetujui_admin') {
+            return redirect()->route('owner.requests.approval')->with('error', 'Pengajuan ini sudah diproses sebelumnya.');
+        }
+
+        DB::transaction(function () use ($user, $requestId) {
+            DB::table('permintaan')
+                ->where('id_permintaan', $requestId)
+                ->update(['status_permintaan' => 'disetujui_owner']);
+
+            DB::table('persetujuan_permintaan')->updateOrInsert(
+                [
+                    'id_permintaan' => $requestId,
+                    'tahap_persetujuan' => 'owner',
+                ],
+                [
+                    'id_user_penyetuju' => (int) $user['id_user'],
+                    'status_persetujuan' => 'disetujui',
+                    'catatan_persetujuan' => 'Disetujui kepala sekolah',
+                    'tanggal_persetujuan' => now()->toDateString(),
+                ]
+            );
+        });
+
+        return redirect()->route('owner.requests.approval')->with('success', 'Pengajuan berhasil disetujui oleh kepala sekolah.');
+    }
+
+    public function ownerRejectRequest(Request $request, int $requestId): RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $ownedRequest = $this->findOwnerApprovalRequest($requestId);
+
+        if (! $ownedRequest) {
+            return redirect()->route('owner.requests.approval')->with('error', 'Pengajuan tidak ditemukan untuk tahap persetujuan kepala sekolah.');
+        }
+
+        if ((string) $ownedRequest->status_permintaan !== 'disetujui_admin') {
+            return redirect()->route('owner.requests.approval')->with('error', 'Pengajuan ini sudah diproses sebelumnya.');
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'min:5', 'max:500'],
+        ], [
+            'rejection_reason.required' => 'Alasan penolakan wajib diisi.',
+            'rejection_reason.min' => 'Alasan penolakan minimal 5 karakter.',
+        ]);
+
+        DB::transaction(function () use ($user, $requestId, $validated) {
+            DB::table('permintaan')
+                ->where('id_permintaan', $requestId)
+                ->update(['status_permintaan' => 'ditolak_owner']);
+
+            DB::table('persetujuan_permintaan')->updateOrInsert(
+                [
+                    'id_permintaan' => $requestId,
+                    'tahap_persetujuan' => 'owner',
+                ],
+                [
+                    'id_user_penyetuju' => (int) $user['id_user'],
+                    'status_persetujuan' => 'ditolak',
+                    'catatan_persetujuan' => trim((string) $validated['rejection_reason']),
+                    'tanggal_persetujuan' => now()->toDateString(),
+                ]
+            );
+        });
+
+        return redirect()->route('owner.requests.approval')->with('success', 'Pengajuan ditolak dan alasannya sudah disimpan.');
+    }
+
+    public function ownerReports(Request $request): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $section = strtolower(trim((string) $request->query('section', 'inventory')));
+        $month = max(1, min(12, (int) $request->query('month', (int) now()->format('m'))));
+        $year = max(2024, (int) $request->query('year', (int) now()->format('Y')));
+
+        if (! in_array($section, ['inventory', 'requests', 'classes'], true)) {
+            $section = 'inventory';
+        }
+
+        $reportData = $this->buildOwnerReportDataset($month, $year);
+
+        return view('laporan_kepala', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'section' => $section,
+            'month' => $month,
+            'year' => $year,
+            'inventoryRows' => $reportData['inventoryRows'],
+            'inventorySummary' => $reportData['inventorySummary'],
+            'requestRows' => $reportData['requestRows'],
+            'requestSummary' => $reportData['requestSummary'],
+            'classRows' => $reportData['classRows'],
+            'classSummary' => $reportData['classSummary'],
+            'yearOptions' => range((int) now()->format('Y'), 2024),
+        ]);
+    }
+
+    public function ownerReportsExport(Request $request): \Symfony\Component\HttpFoundation\Response|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 4) {
+            return redirect()->route('dashboard');
+        }
+
+        $section = strtolower(trim((string) $request->query('section', 'inventory')));
+        $format = strtolower(trim((string) $request->query('format', 'excel')));
+        $month = max(1, min(12, (int) $request->query('month', (int) now()->format('m'))));
+        $year = max(2024, (int) $request->query('year', (int) now()->format('Y')));
+
+        if (! in_array($section, ['inventory', 'requests', 'classes'], true)) {
+            $section = 'inventory';
+        }
+
+        if (! in_array($format, ['excel', 'word'], true)) {
+            $format = 'excel';
+        }
+
+        $reportData = $this->buildOwnerReportDataset($month, $year);
+
+        $title = match ($section) {
+            'requests' => 'Laporan Pengajuan',
+            'classes' => 'Laporan Per Kelas',
+            default => 'Laporan Inventaris',
+        };
+
+        $tableHeader = '';
+        $tableRows = '';
+
+        if ($section === 'requests') {
+            $tableHeader = '<tr><th>Tanggal</th><th>Barang</th><th>Kelas</th><th>Peminta</th><th>Jenis</th><th>Jumlah</th><th>Status</th></tr>';
+            foreach ($reportData['requestRows'] as $row) {
+                $tableRows .= '<tr>'
+                    .'<td>'.$row['tanggal'].'</td>'
+                    .'<td>'.$row['barang'].'</td>'
+                    .'<td>'.$row['kelas'].'</td>'
+                    .'<td>'.$row['peminta'].'</td>'
+                    .'<td>'.$row['jenis'].'</td>'
+                    .'<td>'.$row['jumlah'].'</td>'
+                    .'<td>'.$row['status'].'</td>'
+                    .'</tr>';
+            }
+        } elseif ($section === 'classes') {
+            $tableHeader = '<tr><th>Kelas</th><th>Kode</th><th>Total Barang</th><th>Baik</th><th>Rusak</th><th>Pengajuan</th></tr>';
+            foreach ($reportData['classRows'] as $row) {
+                $tableRows .= '<tr>'
+                    .'<td>'.$row['kelas'].'</td>'
+                    .'<td>'.$row['kode'].'</td>'
+                    .'<td>'.$row['total_barang'].'</td>'
+                    .'<td>'.$row['baik'].'</td>'
+                    .'<td>'.$row['rusak'].'</td>'
+                    .'<td>'.$row['pengajuan'].'</td>'
+                    .'</tr>';
+            }
+        } else {
+            $tableHeader = '<tr><th>Barang</th><th>Total</th><th>Baik</th><th>Rusak</th></tr>';
+            foreach ($reportData['inventoryRows'] as $row) {
+                $tableRows .= '<tr>'
+                    .'<td>'.$row['nama_barang'].'</td>'
+                    .'<td>'.$row['total'].'</td>'
+                    .'<td>'.$row['baik'].'</td>'
+                    .'<td>'.$row['rusak'].'</td>'
+                    .'</tr>';
+            }
+        }
+
+        $extension = $format === 'word' ? 'doc' : 'xls';
+        $contentType = $format === 'word'
+            ? 'application/msword'
+            : 'application/vnd.ms-excel';
+
+        $filename = str_replace(' ', '_', strtolower($title)).'_'.$year.'_'.$month.'.'.$extension;
+
+        $periodLabel = \Carbon\Carbon::create()->month($month)->translatedFormat('F').' '.$year;
+
+        $html = '<html><head><meta charset="UTF-8"><style>'
+            .'body{font-family:Arial,sans-serif;padding:24px;color:#1f2937;}'
+            .'.brand{margin-bottom:18px;border-bottom:2px solid #ffe1cf;padding-bottom:14px;}'
+            .'.brand-small{font-size:13px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:#ff7b2f;margin-bottom:4px;}'
+            .'.brand-name{font-size:30px;font-weight:800;letter-spacing:-0.04em;color:#ff5900;line-height:1.05;}'
+            .'h1{color:#1f2937;margin:0 0 8px;font-size:24px;}'
+            .'p{margin:0 0 16px;color:#6b7280;}'
+            .'table{width:100%;border-collapse:collapse;margin-top:16px;}'
+            .'th,td{border:1px solid #d9d9d9;padding:10px;text-align:left;}'
+            .'th{background:#fff3eb;}'
+            .'</style></head><body>'
+            .'<div class="brand"><div class="brand-small">Sekolah</div><div class="brand-name">Permata Harapan</div></div>'
+            .'<h1>'.$title.'</h1>'
+            .'<p>Periode: '.$periodLabel.'</p>'
+            .'<table><thead>'.$tableHeader.'</thead><tbody>'.$tableRows.'</tbody></table>'
+            .'</body></html>';
+
+        return response($html, 200, [
+            'Content-Type' => $contentType.'; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
+    }
+
     public function destroyRequest(Request $request, int $requestId): RedirectResponse
     {
         if (! session('logged_in')) {
@@ -1123,7 +1787,7 @@ class Control extends Controller
             ['label' => 'Menunggu Persetujuan', 'value' => number_format((int) ($requestStats->menunggu_persetujuan ?? 0)).' Permintaan', 'tone' => 'warn'],
         ];
         $dashboard['panels'][0]['items'] = [
-            ...($priorityRequests !== [] ? $priorityRequests : ['Belum ada pengajuan prioritas yang menunggu persetujuan akhir.']),
+            ...($priorityRequests !== [] ? $priorityRequests : ['Belum ada pengajuan prioritas yang menunggu persetujuan pengajuan.']),
         ];
         $dashboard['panels'][1]['title'] = 'Ringkasan Sekolah';
         $dashboard['panels'][1]['items'] = array_merge(
@@ -1231,6 +1895,165 @@ class Control extends Controller
             ->where('id_permintaan', $requestId)
             ->whereIn('id_ruangan', $roomIds)
             ->first();
+    }
+
+    private function findOwnerApprovalRequest(int $requestId): ?object
+    {
+        return DB::table('permintaan')
+            ->where('id_permintaan', $requestId)
+            ->whereIn('status_permintaan', ['disetujui_admin', 'disetujui_owner', 'ditolak_owner', 'selesai'])
+            ->first();
+    }
+
+    /**
+     * @return array{
+     *     inventoryRows:\Illuminate\Support\Collection<int, array<string, mixed>>,
+     *     inventorySummary:array<string, int>,
+     *     requestRows:\Illuminate\Support\Collection<int, array<string, mixed>>,
+     *     requestSummary:array<string, int>,
+     *     classRows:\Illuminate\Support\Collection<int, array<string, mixed>>,
+     *     classSummary:array<string, int>
+     * }
+     */
+    private function buildOwnerReportDataset(int $month, int $year): array
+    {
+        $inventoryRows = DB::table('inventaris_ruangan as ir')
+            ->join('barang as b', 'b.id_barang', '=', 'ir.id_barang')
+            ->selectRaw('b.nama_barang, COALESCE(SUM(ir.jumlah_baik + ir.jumlah_rusak), 0) as total_barang')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_baik), 0) as total_baik')
+            ->selectRaw('COALESCE(SUM(ir.jumlah_rusak), 0) as total_rusak')
+            ->groupBy('b.id_barang', 'b.nama_barang')
+            ->orderBy('b.nama_barang')
+            ->get()
+            ->map(fn ($row) => [
+                'nama_barang' => ucfirst((string) $row->nama_barang),
+                'total' => (int) $row->total_barang,
+                'baik' => (int) $row->total_baik,
+                'rusak' => (int) $row->total_rusak,
+            ])
+            ->values();
+
+        $inventorySummary = [
+            'total_barang' => (int) DB::table('inventaris_ruangan')->sum(DB::raw('jumlah_baik + jumlah_rusak')),
+            'barang_baik' => (int) DB::table('inventaris_ruangan')->sum('jumlah_baik'),
+            'barang_rusak' => (int) DB::table('inventaris_ruangan')->sum('jumlah_rusak'),
+            'total_jenis' => $inventoryRows->count(),
+        ];
+
+        $requestRows = DB::table('permintaan as p')
+            ->join('ruangan as r', 'r.id_ruangan', '=', 'p.id_ruangan')
+            ->join('users as u', 'u.id_user', '=', 'p.id_user_peminta')
+            ->leftJoin('detail_permintaan as dp', 'dp.id_permintaan', '=', 'p.id_permintaan')
+            ->leftJoin('barang as b', 'b.id_barang', '=', 'dp.id_barang')
+            ->whereMonth('p.tanggal_permintaan', $month)
+            ->whereYear('p.tanggal_permintaan', $year)
+            ->orderByDesc('p.tanggal_permintaan')
+            ->orderByDesc('p.id_permintaan')
+            ->get([
+                'p.id_permintaan',
+                'p.status_permintaan',
+                'p.tanggal_permintaan',
+                'r.nama_ruangan',
+                'u.nama as nama_peminta',
+                'p.jenis_permintaan',
+                'dp.jumlah_diminta',
+                'b.nama_barang',
+            ])
+            ->groupBy('id_permintaan')
+            ->map(function ($rows) {
+                $first = $rows->first();
+                $barang = $rows
+                    ->filter(fn ($row) => ! empty($row->nama_barang))
+                    ->map(fn ($row) => ucfirst((string) $row->nama_barang))
+                    ->values()
+                    ->all();
+                $jumlah = $rows->sum(fn ($row) => (int) ($row->jumlah_diminta ?? 0));
+
+                return [
+                    'tanggal' => \Carbon\Carbon::parse($first->tanggal_permintaan)->translatedFormat('d M Y'),
+                    'barang' => $barang !== [] ? implode(', ', $barang) : '-',
+                    'kelas' => (string) $first->nama_ruangan,
+                    'peminta' => (string) $first->nama_peminta,
+                    'jenis' => $this->formatRequestTypeLabel((string) $first->jenis_permintaan),
+                    'jumlah' => $jumlah,
+                    'status' => $this->formatRequestStatusLabel((string) $first->status_permintaan),
+                    'status_class' => $this->statusBadgeClass((string) $first->status_permintaan),
+                ];
+            })
+            ->values();
+
+        $requestSummary = [
+            'total' => $requestRows->count(),
+            'approved' => $requestRows->filter(fn ($row) => $row['status_class'] === 'approved')->count(),
+            'rejected' => $requestRows->filter(fn ($row) => $row['status_class'] === 'rejected')->count(),
+            'process' => $requestRows->filter(fn ($row) => $row['status_class'] === 'process')->count(),
+        ];
+
+        $classRoomsQuery = DB::table('ruangan')
+            ->select('id_ruangan', 'nama_ruangan', 'kode_ruangan')
+            ->where(function ($query) {
+                $query->where('kode_ruangan', 'like', 'KLS-%')
+                    ->orWhere('kode_ruangan', 'like', 'RPL-%')
+                    ->orWhere('kode_ruangan', 'like', 'BDP-%')
+                    ->orWhere('kode_ruangan', 'like', 'AKL-%');
+            });
+
+        $this->applyOwnerRoomOrdering($classRoomsQuery);
+
+        $classRooms = $classRoomsQuery->get();
+        $classIds = $classRooms->pluck('id_ruangan')->map(fn ($value) => (int) $value)->all();
+
+        $classInventorySummary = $classIds === []
+            ? collect()
+            : DB::table('inventaris_ruangan')
+                ->whereIn('id_ruangan', $classIds)
+                ->selectRaw('id_ruangan, COALESCE(SUM(jumlah_baik + jumlah_rusak), 0) as total_barang')
+                ->selectRaw('COALESCE(SUM(jumlah_baik), 0) as total_baik')
+                ->selectRaw('COALESCE(SUM(jumlah_rusak), 0) as total_rusak')
+                ->groupBy('id_ruangan')
+                ->get()
+                ->keyBy('id_ruangan');
+
+        $classRequestSummary = $classIds === []
+            ? collect()
+            : DB::table('permintaan')
+                ->whereIn('id_ruangan', $classIds)
+                ->whereMonth('tanggal_permintaan', $month)
+                ->whereYear('tanggal_permintaan', $year)
+                ->selectRaw('id_ruangan, COUNT(*) as total_pengajuan')
+                ->groupBy('id_ruangan')
+                ->get()
+                ->keyBy('id_ruangan');
+
+        $classRows = $classRooms->map(function ($room) use ($classInventorySummary, $classRequestSummary) {
+            $inventory = $classInventorySummary->get($room->id_ruangan);
+            $requests = $classRequestSummary->get($room->id_ruangan);
+
+            return [
+                'kelas' => (string) $room->nama_ruangan,
+                'kode' => (string) $room->kode_ruangan,
+                'total_barang' => (int) ($inventory->total_barang ?? 0),
+                'baik' => (int) ($inventory->total_baik ?? 0),
+                'rusak' => (int) ($inventory->total_rusak ?? 0),
+                'pengajuan' => (int) ($requests->total_pengajuan ?? 0),
+            ];
+        })->values();
+
+        $classSummary = [
+            'total_kelas' => $classRows->count(),
+            'total_barang' => $classRows->sum('total_barang'),
+            'barang_rusak' => $classRows->sum('rusak'),
+            'total_pengajuan' => $classRows->sum('pengajuan'),
+        ];
+
+        return [
+            'inventoryRows' => $inventoryRows,
+            'inventorySummary' => $inventorySummary,
+            'requestRows' => $requestRows,
+            'requestSummary' => $requestSummary,
+            'classRows' => $classRows,
+            'classSummary' => $classSummary,
+        ];
     }
 
     private function generateRequestCode(): string
@@ -1343,6 +2166,36 @@ class Control extends Controller
                 return $wali?->nama ?? ($rows->first()->nama ?? 'Belum ditentukan');
             })
             ->all();
+    }
+
+    private function applyOwnerRoomOrdering($query): void
+    {
+        $query->orderByRaw("
+            CASE
+                WHEN kode_ruangan = 'KLS-7A' THEN 1
+                WHEN kode_ruangan = 'KLS-7B' THEN 2
+                WHEN kode_ruangan = 'KLS-7C' THEN 3
+                WHEN kode_ruangan = 'KLS-8A' THEN 4
+                WHEN kode_ruangan = 'KLS-8B' THEN 5
+                WHEN kode_ruangan = 'KLS-8C' THEN 6
+                WHEN kode_ruangan = 'KLS-9A' THEN 7
+                WHEN kode_ruangan = 'KLS-9B' THEN 8
+                WHEN kode_ruangan = 'KLS-9C' THEN 9
+                WHEN kode_ruangan = 'RPL-X' THEN 10
+                WHEN kode_ruangan = 'RPL-XI' THEN 11
+                WHEN kode_ruangan = 'RPL-XIIA' THEN 12
+                WHEN kode_ruangan = 'RPL-XIIB' THEN 13
+                WHEN kode_ruangan = 'BDP-X' THEN 14
+                WHEN kode_ruangan = 'BDP-XI' THEN 15
+                WHEN kode_ruangan = 'BDP-XII' THEN 16
+                WHEN kode_ruangan = 'AKL-X' THEN 17
+                WHEN kode_ruangan = 'AKL-XI' THEN 18
+                WHEN kode_ruangan = 'AKL-XII' THEN 19
+                WHEN kode_ruangan = 'AKL-XIIA' THEN 20
+                WHEN kode_ruangan = 'AKL-XIIB' THEN 21
+                ELSE 999
+            END
+        ")->orderBy('nama_ruangan');
     }
 
     private function formatRequestStatusLabel(string $status): string

@@ -15,6 +15,13 @@ Route::get('/wali-kelas/riwayat-pengajuan', [Control::class, 'adminRequestHistor
 Route::get('/wali-kelas/pengajuan-masuk', [Control::class, 'adminRequestInbox'])->name('admin.requests.inbox');
 Route::post('/wali-kelas/pengajuan-masuk/{requestId}/approve', [Control::class, 'adminApproveRequest'])->name('admin.requests.approve');
 Route::post('/wali-kelas/pengajuan-masuk/{requestId}/reject', [Control::class, 'adminRejectRequest'])->name('admin.requests.reject');
+Route::get('/kepala-sekolah/semua-ruangan', [Control::class, 'ownerRooms'])->name('owner.rooms');
+Route::get('/kepala-sekolah/inventaris-sekolah', [Control::class, 'ownerInventories'])->name('owner.inventories');
+Route::get('/kepala-sekolah/persetujuan-pengajuan', [Control::class, 'ownerRequestApproval'])->name('owner.requests.approval');
+Route::post('/kepala-sekolah/persetujuan-pengajuan/{requestId}/approve', [Control::class, 'ownerApproveRequest'])->name('owner.requests.approve');
+Route::post('/kepala-sekolah/persetujuan-pengajuan/{requestId}/reject', [Control::class, 'ownerRejectRequest'])->name('owner.requests.reject');
+Route::get('/kepala-sekolah/laporan', [Control::class, 'ownerReports'])->name('owner.reports');
+Route::get('/kepala-sekolah/laporan/export', [Control::class, 'ownerReportsExport'])->name('owner.reports.export');
 Route::delete('/riwayat-pengajuan/{requestId}', [Control::class, 'destroyRequest'])->name('requests.destroy');
 
 Route::get('/login', [Control::class, 'showLoginForm'])->name('login');

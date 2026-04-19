@@ -110,13 +110,17 @@
         }
 
         .table-card { overflow: hidden; }
-        .table-wrap { overflow-x: hidden; }
+        .table-wrap {
+            width: 100%;
+            overflow-x: hidden;
+        }
 
         .request-table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             table-layout: fixed;
+            min-width: 0;
         }
 
         .request-table th,
@@ -126,6 +130,7 @@
             border-bottom: 1px solid #f4e6dc;
             vertical-align: top;
             word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         .request-table th {

@@ -117,13 +117,17 @@
             overflow: hidden;
         }
 
-        .table-wrap { overflow-x: hidden; }
+        .table-wrap {
+            width: 100%;
+            overflow-x: hidden;
+        }
 
         .request-table {
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             table-layout: fixed;
+            min-width: 0;
         }
 
         .request-table th,
@@ -132,6 +136,8 @@
             padding: 1rem 1rem;
             border-bottom: 1px solid #f4e6dc;
             vertical-align: top;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
 
         .request-table th {

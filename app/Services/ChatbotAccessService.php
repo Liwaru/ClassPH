@@ -272,7 +272,7 @@ class ChatbotAccessService
             4 => [
                 $this->option('ruangan_owner', 'Semua Ruangan', 'bi bi-buildings-fill'),
                 $this->option('inventaris_owner', 'Inventaris Sekolah', 'bi bi-boxes'),
-                $this->option('persetujuan_owner', 'Persetujuan Akhir', 'bi bi-clipboard2-check-fill'),
+                $this->option('persetujuan_owner', 'Persetujuan Pengajuan', 'bi bi-clipboard2-check-fill'),
                 $this->option('laporan_owner', 'Laporan', 'bi bi-bar-chart-fill'),
                 $this->option('akses_owner', 'Batas Akses', 'bi bi-shield-lock-fill'),
                 $this->option('lainnya', 'Lainnya', 'bi bi-three-dots'),
@@ -593,8 +593,8 @@ class ChatbotAccessService
                 ],
                 [
                     'id' => 'persetujuan_owner',
-                    'label' => 'Persetujuan Akhir',
-                    'message' => 'Pilih bantuan terkait persetujuan akhir.',
+                    'label' => 'Persetujuan Pengajuan',
+                    'message' => 'Pilih bantuan terkait persetujuan pengajuan.',
                     'children' => [
                         ['id' => 'persetujuan_owner_ringkasan', 'label' => 'Ringkasan pengajuan', 'answer_key' => 'global_requests'],
                         ['id' => 'persetujuan_owner_batas', 'label' => 'Batas akses owner', 'answer_key' => 'owner_scope'],
@@ -851,7 +851,7 @@ class ChatbotAccessService
             1 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Kelas Saya', 'Ajukan Permintaan', 'Riwayat Pengajuan']).'.',
             2 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Kelas Binaan', 'Pengajuan Masuk', 'Riwayat Verifikasi']).'.',
             3 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Data User', 'Data Ruangan', 'Data Barang', 'Data Inventaris', 'Realisasi Pengajuan', 'Asisten Sistem', 'Laporan']).'.',
-            4 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Asisten Sistem', 'Laporan']).'.',
+            4 => 'Menu utama akunmu meliputi '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Pengajuan', 'Asisten Sistem', 'Laporan']).'.',
             default => 'Menu dashboard akan mengikuti role akun yang sedang aktif.',
         };
     }
@@ -1343,7 +1343,7 @@ class ChatbotAccessService
             1 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Saya', 'Inventaris Kelas', 'Pengajuan', 'Akun', 'Penggunaan Dashboard']).'. Kamu juga bisa memilih kategori bantuan yang tersedia di panel chat.',
             2 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Kelas Binaan', 'Inventaris Kelas', 'Pengajuan Masuk', 'Riwayat Verifikasi']).' sesuai aksesmu.',
             3 => 'Saya bisa membantu untuk '.$this->formatMenuList(['Data User', 'Data Ruangan', 'Data Barang', 'Data Inventaris', 'Realisasi Pengajuan', 'Asisten Sistem', 'Laporan']).' sesuai akses akunmu.',
-            4 => 'Saya bisa membantu untuk melihat data melalui '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Akhir', 'Laporan']).'. Saya juga bisa menampilkan data kelas tertentu dan menghitung total barang dari semua kelas.',
+            4 => 'Saya bisa membantu untuk melihat data melalui '.$this->formatMenuList(['Semua Ruangan', 'Inventaris Sekolah', 'Persetujuan Pengajuan', 'Laporan']).'. Saya juga bisa menampilkan data kelas tertentu dan menghitung total barang dari semua kelas.',
             default => 'Saya siap membantu soal inventaris, ruangan, pengajuan, dan penggunaan dashboard sesuai akses akunmu.',
         };
     }

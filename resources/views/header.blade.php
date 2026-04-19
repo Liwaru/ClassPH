@@ -382,7 +382,7 @@
             4 => [
                 ['label' => 'Semua Ruangan', 'icon' => 'bi bi-buildings-fill', 'url' => $safeRoute('owner.rooms')],
                 ['label' => 'Inventaris Sekolah', 'icon' => 'bi bi-boxes', 'url' => $safeRoute('owner.inventories')],
-                ['label' => 'Persetujuan Akhir', 'icon' => 'bi bi-clipboard2-check-fill', 'url' => $safeRoute('owner.requests.approval')],
+                ['label' => 'Persetujuan Pengajuan', 'icon' => 'bi bi-clipboard2-check-fill', 'url' => $safeRoute('owner.requests.approval')],
                 ['label' => 'Laporan', 'icon' => 'bi bi-bar-chart-fill', 'url' => $safeRoute('owner.reports')],
             ],
         ];
