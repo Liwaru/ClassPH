@@ -89,13 +89,6 @@
             max-width: 820px;
         }
 
-        .hero-actions {
-            display: flex;
-            gap: 0.75rem;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-
         .action-btn {
             display: inline-flex;
             align-items: center;
@@ -173,7 +166,7 @@
 
         .filter-form {
             display: grid;
-            grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(170px, 0.9fr)) auto;
+            grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(190px, 0.95fr)) auto;
             gap: 0.85rem;
             align-items: end;
         }
@@ -286,6 +279,13 @@
             margin-top: 0.2rem;
         }
 
+        .table-header-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
         .table-wrap {
             overflow-x: visible;
         }
@@ -374,18 +374,16 @@
             border-radius: 16px;
             background: #fff8f4;
             border: 1px solid #f5e2d8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 54px;
         }
 
         .assignment-room {
             font-weight: 700;
-            margin-bottom: 0.2rem;
             font-size: 0.85rem;
-        }
-
-        .assignment-meta {
-            display: flex;
-            gap: 0.45rem;
-            flex-wrap: wrap;
+            text-align: center;
         }
 
         .muted-text {
@@ -592,23 +590,23 @@
                 padding: 5.3rem 1rem 1.8rem;
             }
 
-            .hero-card {
-                flex-direction: column;
-            }
-
-            .hero-actions {
-                width: 100%;
-                justify-content: stretch;
-            }
-
-            .hero-actions .action-btn {
-                flex: 1 1 0;
-            }
-
             .summary-grid,
             .field-grid,
             .filter-form {
                 grid-template-columns: 1fr;
+            }
+
+            .table-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .table-header-actions {
+                width: 100%;
+            }
+
+            .table-header-actions .action-btn {
+                width: 100%;
             }
         }
     </style>
@@ -624,13 +622,6 @@
                         <div class="eyebrow">{{ $dashboard['role_name'] ?? 'Pengelola Sistem' }}</div>
                         <h1 class="hero-title">Data User</h1>
                         <p class="hero-subtitle">Kelola akun, lihat role user, dan pantau keterhubungan user dengan ruangan melalui penugasan aktif maupun histori penugasan dalam satu halaman.</p>
-                    </div>
-
-                    <div class="hero-actions">
-                        <button type="button" class="action-btn primary js-open-modal" data-modal="create-user">
-                            <i class="bi bi-person-plus-fill"></i>
-                            <span>Tambah User</span>
-                        </button>
                     </div>
                 </section>
 
@@ -670,15 +661,6 @@
                                 @foreach ($roleOptions as $level => $label)
                                     <option value="{{ $level }}" @selected($filters['role'] === (string) $level)>{{ $label }}</option>
                                 @endforeach
-                            </select>
-                        </div>
-                        <div class="filter-field">
-                            <label for="assignmentStatusFilter">Status Penugasan</label>
-                            <select id="assignmentStatusFilter" name="assignment_status">
-                                <option value="semua" @selected($filters['assignment_status'] === 'semua')>Semua Status</option>
-                                <option value="aktif" @selected($filters['assignment_status'] === 'aktif')>Aktif</option>
-                                <option value="nonaktif" @selected($filters['assignment_status'] === 'nonaktif')>Nonaktif</option>
-                                <option value="tanpa" @selected($filters['assignment_status'] === 'tanpa')>Tanpa Penugasan</option>
                             </select>
                         </div>
                         <div class="filter-field">
@@ -726,8 +708,14 @@
                 <section class="table-card">
                     <div class="table-header">
                         <div>
-                            <div class="table-title">Manajemen User dan Penugasan</div>
+                            <div class="table-title">Manajemen User</div>
                             <div class="table-subtitle">Menampilkan {{ number_format($users->total()) }} user berdasarkan filter aktif.</div>
+                        </div>
+                        <div class="table-header-actions">
+                            <button type="button" class="action-btn primary js-open-modal" data-modal="create-user">
+                                <i class="bi bi-person-plus-fill"></i>
+                                <span>Tambah User</span>
+                            </button>
                         </div>
                     </div>
 
@@ -743,15 +731,11 @@
                                         <th>Role</th>
                                         <th>Ruangan/Kelas</th>
                                         <th>Peran Ruangan</th>
-                                        <th>Status Penugasan</th>
                                         <th>Aksi</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach ($userRows as $row)
-                                        @php
-                                            $primaryAssignment = $row['primary_assignment'];
-                                        @endphp
                                         <tr>
                                             <td>
                                                 <div class="user-name">{{ $row['nama'] }}</div>
@@ -771,10 +755,6 @@
                                                         @foreach (array_slice($row['assignments'], 0, 2) as $assignment)
                                                             <div class="assignment-item">
                                                                 <div class="assignment-room">{{ $assignment['nama_ruangan'] }}</div>
-                                                                <div class="assignment-meta">
-                                                                    <span class="mini-pill muted">{{ ucfirst($assignment['jenis_ruangan']) }}</span>
-                                                                    <span class="mini-pill {{ $assignment['status_class'] }}">{{ $assignment['status_label'] }}</span>
-                                                                </div>
                                                             </div>
                                                         @endforeach
                                                         @if ($row['assignment_count'] > 2)
@@ -795,13 +775,6 @@
                                                             <div class="user-meta">dan lainnya</div>
                                                         @endif
                                                     </div>
-                                                @endif
-                                            </td>
-                                            <td>
-                                                @if ($primaryAssignment)
-                                                    <span class="pill {{ $primaryAssignment['status_class'] }}">{{ $primaryAssignment['status_label'] }}</span>
-                                                @else
-                                                    <span class="pill muted">Belum Ditugaskan</span>
                                                 @endif
                                             </td>
                                             <td>
@@ -875,7 +848,6 @@
                 @csrf
                 <input type="hidden" name="q" value="{{ $filters['q'] }}">
                 <input type="hidden" name="role_filter" value="{{ $filters['role'] }}">
-                <input type="hidden" name="assignment_status_filter" value="{{ $filters['assignment_status'] }}">
                 <input type="hidden" name="room_type_filter" value="{{ $filters['room_type'] }}">
 
                 <div class="field-grid">
@@ -940,7 +912,6 @@
                     @csrf
                     <input type="hidden" name="q" value="{{ $filters['q'] }}">
                     <input type="hidden" name="role_filter" value="{{ $filters['role'] }}">
-                    <input type="hidden" name="assignment_status_filter" value="{{ $filters['assignment_status'] }}">
                     <input type="hidden" name="room_type_filter" value="{{ $filters['room_type'] }}">
 
                     <div class="field-grid">
@@ -993,7 +964,6 @@
                     @csrf
                     <input type="hidden" name="q" value="{{ $filters['q'] }}">
                     <input type="hidden" name="role_filter" value="{{ $filters['role'] }}">
-                    <input type="hidden" name="assignment_status_filter" value="{{ $filters['assignment_status'] }}">
                     <input type="hidden" name="room_type_filter" value="{{ $filters['room_type'] }}">
                     <input type="hidden" name="assignment_id" value="{{ $isAssignmentModalOpen ? old('assignment_id', $primaryAssignment['id_penugasan_ruangan'] ?? '') : ($primaryAssignment['id_penugasan_ruangan'] ?? '') }}">
 

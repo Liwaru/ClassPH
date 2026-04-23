@@ -39,6 +39,8 @@ Route::get('/superadmin/tindak-lanjut-pengajuan', [Control::class, 'superadminRe
 Route::post('/superadmin/tindak-lanjut-pengajuan/{requestId}/realize', [Control::class, 'superadminRealizeRequest'])->name('superadmin.requests.realization.store');
 Route::get('/superadmin/laporan', [Control::class, 'superadminReports'])->name('superadmin.reports');
 Route::get('/superadmin/laporan/export', [Control::class, 'superadminReportsExport'])->name('superadmin.reports.export');
+Route::get('/superadmin/hak-akses', [Control::class, 'hakAkses'])->name('hak_akses.index');
+Route::post('/superadmin/hak-akses', [Control::class, 'updateHakAkses'])->name('hak_akses.update');
 
 Route::get('/login', [Control::class, 'showLoginForm'])->name('login');
 Route::post('/login', [Control::class, 'processLogin'])->name('login.process');

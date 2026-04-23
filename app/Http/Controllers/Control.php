@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 
 use App\Models\User;
+use App\Services\MenuAccessService;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -150,6 +151,75 @@ class Control extends Controller
             ],
         ],
     ];
+
+    private const ROUTE_MENU_MAP = [
+        'class.inventory' => 'kelas_saya_user',
+        'requests.create' => 'ajukan_permintaan',
+        'requests.store' => 'ajukan_permintaan',
+        'requests.history' => 'riwayat_pengajuan_user',
+        'requests.destroy' => 'riwayat_pengajuan_user',
+        'admin.class.inventory' => 'kelas_saya_admin',
+        'admin.requests.inbox' => 'pengajuan_kelas',
+        'admin.requests.approve' => 'pengajuan_kelas',
+        'admin.requests.reject' => 'pengajuan_kelas',
+        'admin.requests.history' => 'riwayat_pengajuan_admin',
+        'superadmin.users' => 'data_user',
+        'superadmin.users.store' => 'data_user',
+        'superadmin.users.update' => 'data_user',
+        'superadmin.users.assignment' => 'data_user',
+        'superadmin.rooms' => 'data_ruangan',
+        'superadmin.rooms.store' => 'data_ruangan',
+        'superadmin.rooms.update' => 'data_ruangan',
+        'superadmin.rooms.delete' => 'data_ruangan',
+        'superadmin.items' => 'data_inventaris',
+        'superadmin.items.store' => 'data_inventaris',
+        'superadmin.items.update' => 'data_inventaris',
+        'superadmin.items.delete' => 'data_inventaris',
+        'superadmin.requests.realization' => 'tindak_lanjut_pengajuan',
+        'superadmin.requests.realization.store' => 'tindak_lanjut_pengajuan',
+        'superadmin.reports' => 'laporan_superadmin',
+        'superadmin.reports.export' => 'laporan_superadmin',
+        'hak_akses.index' => 'hak_akses',
+        'hak_akses.update' => 'hak_akses',
+        'owner.rooms' => 'semua_ruangan',
+        'owner.inventories' => 'inventaris_sekolah',
+        'owner.requests.approval' => 'persetujuan_pengajuan',
+        'owner.requests.approve' => 'persetujuan_pengajuan',
+        'owner.requests.reject' => 'persetujuan_pengajuan',
+        'owner.reports' => 'laporan_owner',
+        'owner.reports.export' => 'laporan_owner',
+    ];
+
+    public function __construct()
+    {
+        $this->middleware(function ($request, $next) {
+            if (! session('logged_in')) {
+                return $next($request);
+            }
+
+            $routeName = $request->route()?->getName();
+            $menuKey = $routeName ? (self::ROUTE_MENU_MAP[$routeName] ?? null) : null;
+
+            if ($menuKey === null) {
+                return $next($request);
+            }
+
+            $user = (array) session('user');
+            $level = (int) ($user['level'] ?? 0);
+
+            if ($level <= 0) {
+                return $next($request);
+            }
+
+            if (! app(MenuAccessService::class)->userCanAccessMenu($level, $menuKey)) {
+                return redirect()
+                    ->route('dashboard')
+                    ->with('error', 'Menu ini tidak tersedia untuk level akunmu saat ini.');
+            }
+
+            return $next($request);
+        });
+    }
 
     /**
      * Display the login page.
@@ -557,17 +627,11 @@ class Control extends Controller
         $dashboard = $this->resolveDashboardData($user);
         $search = trim((string) $request->query('q', ''));
         $role = trim((string) $request->query('role', 'semua'));
-        $assignmentStatus = trim((string) $request->query('assignment_status', 'semua'));
         $roomType = trim((string) $request->query('room_type', 'semua'));
         $validRoleFilters = ['semua', '1', '2', '3', '4'];
-        $validAssignmentFilters = ['semua', 'aktif', 'nonaktif', 'tanpa'];
 
         if (! in_array($role, $validRoleFilters, true)) {
             $role = 'semua';
-        }
-
-        if (! in_array($assignmentStatus, $validAssignmentFilters, true)) {
-            $assignmentStatus = 'semua';
         }
 
         $roomTypeOptions = DB::table('ruangan')
@@ -592,21 +656,6 @@ class Control extends Controller
                 });
             })
             ->when($role !== 'semua', fn ($query) => $query->where('u.level', (int) $role))
-            ->when($assignmentStatus === 'tanpa', function ($query) {
-                $query->whereNotExists(function ($subQuery) {
-                    $subQuery->selectRaw('1')
-                        ->from('penugasan_ruangan as pr')
-                        ->whereColumn('pr.id_user', 'u.id_user');
-                });
-            })
-            ->when(in_array($assignmentStatus, ['aktif', 'nonaktif'], true), function ($query) use ($assignmentStatus) {
-                $query->whereExists(function ($subQuery) use ($assignmentStatus) {
-                    $subQuery->selectRaw('1')
-                        ->from('penugasan_ruangan as pr')
-                        ->whereColumn('pr.id_user', 'u.id_user')
-                        ->where('pr.status', $assignmentStatus);
-                });
-            })
             ->when($roomType !== 'semua', function ($query) use ($roomType) {
                 $query->whereExists(function ($subQuery) use ($roomType) {
                     $subQuery->selectRaw('1')
@@ -696,7 +745,7 @@ class Control extends Controller
             ->orderBy('nama_ruangan')
             ->get(['id_ruangan', 'nama_ruangan', 'kode_ruangan', 'jenis_ruangan', 'status']);
 
-        return view('superadmin_users', [
+        return view('data_users', [
             'user' => $user,
             'dashboard' => $dashboard,
             'summary' => $summary,
@@ -708,7 +757,6 @@ class Control extends Controller
             'filters' => [
                 'q' => $search,
                 'role' => $role,
-                'assignment_status' => $assignmentStatus,
                 'room_type' => $roomType,
             ],
         ]);
@@ -1092,7 +1140,7 @@ class Control extends Controller
             'total_inventaris' => (int) DB::table('inventaris_ruangan')->sum(DB::raw('jumlah_baik + jumlah_rusak')),
         ];
 
-        return view('superadmin_rooms', [
+        return view('data_ruangan', [
             'user' => $user,
             'dashboard' => $dashboard,
             'summary' => $summary,
@@ -1421,7 +1469,7 @@ class Control extends Controller
                 ->count(),
         ];
 
-        return view('superadmin_items', [
+        return view('data_inventaris', [
             'user' => $user,
             'dashboard' => $dashboard,
             'summary' => $summary,
@@ -1798,7 +1846,7 @@ class Control extends Controller
             ->selectRaw('COUNT(*) as total')
             ->first();
 
-        return view('superadmin_request_realizations', [
+        return view('tindak_lanjut_pengajuan', [
             'user' => $user,
             'dashboard' => $dashboard,
             'summary' => [
@@ -2227,7 +2275,7 @@ class Control extends Controller
             'total_pengajuan_direalisasi' => (int) DB::table('permintaan')->where('status_permintaan', 'selesai')->count(),
         ];
 
-        return view('superadmin_reports', [
+        return view('laporan', [
             'user' => $user,
             'dashboard' => $dashboard,
             'section' => $section,
@@ -2325,6 +2373,50 @@ class Control extends Controller
             'Content-Type' => $contentType,
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
+    }
+
+    public function hakAkses(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 3) {
+            return redirect()->route('dashboard');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $menuAccessService = app(MenuAccessService::class);
+
+        return view('hak_akses', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'levels' => $menuAccessService->levels(),
+            'menus' => $menuAccessService->menuKeys(),
+            'menuLabels' => $menuAccessService->menuLabels(),
+            'permissions' => $menuAccessService->permissionMatrix(),
+        ]);
+    }
+
+    public function updateHakAkses(Request $request): RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 3) {
+            return redirect()->route('dashboard');
+        }
+
+        app(MenuAccessService::class)->savePermissions((array) $request->input('permissions', []));
+
+        return redirect()
+            ->route('hak_akses.index')
+            ->with('success', 'Hak akses menu berhasil diperbarui.');
     }
 
     public function createRequest(): View|RedirectResponse
@@ -4183,7 +4275,6 @@ class Control extends Controller
         return [
             'q' => trim((string) $request->input('q', $request->query('q', ''))),
             'role' => trim((string) $request->input('role_filter', $request->query('role', 'semua'))),
-            'assignment_status' => trim((string) $request->input('assignment_status_filter', $request->query('assignment_status', 'semua'))),
             'room_type' => trim((string) $request->input('room_type_filter', $request->query('room_type', 'semua'))),
         ];
     }

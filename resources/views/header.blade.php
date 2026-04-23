@@ -360,34 +360,23 @@
         $safeRoute = static function (string $name): string {
             return \Illuminate\Support\Facades\Route::has($name) ? route($name) : '#';
         };
-        $menuByLevel = [
-            1 => [
-                ['label' => 'Kelas Saya', 'icon' => 'bi bi-door-open-fill', 'url' => route('class.inventory')],
-                ['label' => 'Ajukan Permintaan', 'icon' => 'bi bi-send-plus-fill', 'url' => route('requests.create')],
-                ['label' => 'Riwayat Pengajuan', 'icon' => 'bi bi-clock-history', 'url' => route('requests.history')],
-            ],
-            2 => [
-                ['label' => 'Kelas Saya', 'icon' => 'bi bi-building', 'url' => $safeRoute('admin.class.inventory')],
-                ['label' => 'Pengajuan Kelas', 'icon' => 'bi bi-inbox-fill', 'url' => $safeRoute('admin.requests.inbox')],
-                ['label' => 'Riwayat Pengajuan', 'icon' => 'bi bi-patch-check-fill', 'url' => $safeRoute('admin.requests.history')],
-            ],
-            3 => [
-                ['label' => 'Data User', 'icon' => 'bi bi-people-fill', 'url' => $safeRoute('superadmin.users')],
-                ['label' => 'Data Ruangan', 'icon' => 'bi bi-building-fill-gear', 'url' => $safeRoute('superadmin.rooms')],
-                ['label' => 'Data Inventaris', 'icon' => 'bi bi-grid-fill', 'url' => $safeRoute('superadmin.items')],
-                ['label' => 'Tindak Lanjut Pengajuan', 'icon' => 'bi bi-list-check', 'url' => $safeRoute('superadmin.requests.realization')],
-                ['label' => 'Laporan', 'icon' => 'bi bi-bar-chart-line-fill', 'url' => $safeRoute('superadmin.reports')],
-            ],
-            4 => [
-                ['label' => 'Semua Ruangan', 'icon' => 'bi bi-buildings-fill', 'url' => $safeRoute('owner.rooms')],
-                ['label' => 'Inventaris Sekolah', 'icon' => 'bi bi-boxes', 'url' => $safeRoute('owner.inventories')],
-                ['label' => 'Persetujuan Pengajuan', 'icon' => 'bi bi-clipboard2-check-fill', 'url' => $safeRoute('owner.requests.approval')],
-                ['label' => 'Laporan', 'icon' => 'bi bi-bar-chart-fill', 'url' => $safeRoute('owner.reports')],
-            ],
-        ];
-        $menus = $menuByLevel[$level] ?? [
-            ['label' => 'Dashboard', 'icon' => 'bi bi-grid-1x2-fill', 'url' => route('dashboard')],
-        ];
+        $menuService = app(\App\Services\MenuAccessService::class);
+        $menus = collect($menuService->sidebarMenusForLevel($level))
+            ->map(function (array $menu) use ($safeRoute) {
+                return [
+                    'label' => $menu['label'],
+                    'icon' => $menu['icon'],
+                    'url' => $safeRoute($menu['route']),
+                ];
+            })
+            ->values()
+            ->all();
+
+        if ($menus === []) {
+            $menus = [
+                ['label' => 'Dashboard', 'icon' => 'bi bi-grid-1x2-fill', 'url' => route('dashboard')],
+            ];
+        }
     @endphp
 
     <ul class="sidebar-nav">
