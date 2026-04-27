@@ -4875,8 +4875,13 @@ class Control extends Controller
             'updated_at' => $now,
         ]);
 
-        Mail::raw(
-            "Kode OTP login InfraSPH Anda adalah {$otp}. Kode ini berlaku selama 5 menit.",
+        Mail::send(
+            'emails.login_otp',
+            [
+                'appUrl' => parse_url((string) config('app.url'), PHP_URL_HOST) ?: config('app.name', 'InfraSPH'),
+                'name' => $user->nama,
+                'otp' => $otp,
+            ],
             function ($message) use ($email) {
                 $message->to($email)->subject('Kode OTP Login InfraSPH');
             }

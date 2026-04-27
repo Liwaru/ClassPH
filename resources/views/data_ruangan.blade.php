@@ -535,12 +535,6 @@
                         <h1 class="hero-title">Data Ruangan</h1>
                         <p class="hero-subtitle">Kelola identitas ruangan, penanggung jawab, dan ringkasan inventaris ruangan dari satu halaman superadmin yang lebih rapi.</p>
                     </div>
-                    <div class="hero-actions">
-                        <button type="button" class="action-btn primary js-open-modal" data-modal="create-room">
-                            <i class="bi bi-building-add"></i>
-                            <span>Tambah Ruangan</span>
-                        </button>
-                    </div>
                 </section>
 
                 <section class="summary-grid">
