@@ -6,7 +6,11 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', [Control::class, 'dashboard'])->name('root');
 Route::get('/dashboard', [Control::class, 'dashboard'])->name('dashboard');
+Route::get('/profil', [Control::class, 'profile'])->name('profile.show');
+Route::get('/keamanan', [Control::class, 'security'])->name('security.show');
+Route::get('/ubah-password', [Control::class, 'changePassword'])->name('profile.password.edit');
 Route::get('/profil-keamanan', [Control::class, 'profileSecurity'])->name('profile.security');
+Route::get('/catatan-aktivitas', [Control::class, 'activityLogs'])->name('activity.logs');
 Route::post('/profil-keamanan/profil', [Control::class, 'updateProfileIdentity'])->name('profile.identity.update');
 Route::post('/profil-keamanan/password', [Control::class, 'updateProfilePassword'])->name('profile.password.update');
 Route::post('/profil-keamanan/otp', [Control::class, 'updateProfileOtp'])->name('profile.otp.update');

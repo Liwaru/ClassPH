@@ -87,6 +87,12 @@ class MenuAccessService
             'route' => 'superadmin.reports',
             'default_levels' => [3],
         ],
+        'catatan_aktivitas' => [
+            'label' => 'Catatan Aktivitas',
+            'icon' => 'bi bi-activity',
+            'route' => 'activity.logs',
+            'default_levels' => [3, 4],
+        ],
         'semua_ruangan' => [
             'label' => 'Semua Ruangan',
             'icon' => 'bi bi-buildings-fill',
@@ -110,12 +116,6 @@ class MenuAccessService
             'icon' => 'bi bi-bar-chart-fill',
             'route' => 'owner.reports',
             'default_levels' => [4],
-        ],
-        'profil_keamanan' => [
-            'label' => 'Profil & Keamanan',
-            'icon' => 'bi bi-person-gear',
-            'route' => 'profile.security',
-            'default_levels' => [1, 2, 3, 4],
         ],
     ];
 
@@ -218,11 +218,11 @@ class MenuAccessService
             ];
         }
 
-        if (! collect($menus)->contains('key', 'profil_keamanan')) {
-            $definition = self::MENU_DEFINITIONS['profil_keamanan'];
+        if (in_array($level, [3, 4], true) && ! collect($menus)->contains('key', 'catatan_aktivitas')) {
+            $definition = self::MENU_DEFINITIONS['catatan_aktivitas'];
             $menus[] = [
-                'key' => 'profil_keamanan',
-                'label' => $this->sidebarLabel('profil_keamanan'),
+                'key' => 'catatan_aktivitas',
+                'label' => $this->sidebarLabel('catatan_aktivitas'),
                 'icon' => $definition['icon'],
                 'route' => $definition['route'],
             ];
@@ -238,6 +238,10 @@ class MenuAccessService
         }
 
         if ($level === 3 && $menuKey === 'hak_akses') {
+            return true;
+        }
+
+        if ($menuKey === 'catatan_aktivitas' && in_array($level, [3, 4], true)) {
             return true;
         }
 

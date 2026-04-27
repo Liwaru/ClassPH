@@ -113,7 +113,7 @@
             @endif
 
             <section class="profile-grid">
-                <div class="panel-card">
+                <div class="panel-card" id="profil">
                     <h2 class="panel-title">Profil</h2>
 
                     @if ($canEditIdentity)
@@ -149,7 +149,7 @@
                     @endif
                 </div>
 
-                <div class="panel-card">
+                <div class="panel-card" id="ubah-password">
                     <h2 class="panel-title">Ubah Password</h2>
                     <p class="panel-copy">Gunakan password baru minimal 6 karakter. Nama dan email tidak ikut berubah saat password diperbarui.</p>
                     <form action="{{ route('profile.password.update') }}" method="POST">

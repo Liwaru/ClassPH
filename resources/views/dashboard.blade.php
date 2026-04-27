@@ -770,6 +770,7 @@
             </div>
         </main>
     </div>
+    @if ((int) ($user['level'] ?? 0) !== 3)
     <div class="chatbot-shell" id="chatbotShell">
 
         <div class="chatbot-panel" id="chatbotPanel">
@@ -1183,5 +1184,6 @@
             refreshChatStartedState();
         })();
     </script>
+    @endif
 </body>
 </html>

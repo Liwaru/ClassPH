@@ -17,15 +17,15 @@
         body {
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
-            height: 100vh;
-            height: 100dvh;
+            min-height: 100dvh;
             background: linear-gradient(135deg, #ff5900 0%, #ff5900 42%, #ff5900 100%);
             display: flex;
             align-items: center;
             justify-content: center;
             padding: 0.9rem 1.5rem;
             position: relative;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         /* background animasi lembut */
@@ -500,16 +500,16 @@
         <form action="{{ route('login.password') }}" method="POST" id="loginForm">
             @csrf
 
-            <!-- Field Email -->
+            <!-- Field Nama -->
             <div class="input-group">
-                <label> Email</label>
-                <input type="email"
+                <label> Nama</label>
+                <input type="text"
                        id="login"
                        name="login"
                        class="input-field"
                        value="{{ old('login') }}"
-                       placeholder="masukkan email"
-                       autocomplete="email">
+                       placeholder="masukkan nama"
+                       autocomplete="username">
                 @error('login')
                 <div class="validation-text">
                     <i class="fas fa-circle-exclamation"></i> {{ $message }}

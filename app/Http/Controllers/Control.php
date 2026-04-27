@@ -190,10 +190,41 @@ class Control extends Controller
         'owner.requests.reject' => 'persetujuan_pengajuan',
         'owner.reports' => 'laporan_owner',
         'owner.reports.export' => 'laporan_owner',
+        'activity.logs' => 'catatan_aktivitas',
+        'profile.show' => 'profil_keamanan',
+        'security.show' => 'profil_keamanan',
+        'profile.password.edit' => 'profil_keamanan',
         'profile.security' => 'profil_keamanan',
         'profile.identity.update' => 'profil_keamanan',
         'profile.password.update' => 'profil_keamanan',
         'profile.otp.update' => 'profil_keamanan',
+    ];
+
+    private const ACTIVITY_ROUTE_MAP = [
+        'profile.identity.update' => ['action' => 'Mengubah', 'module' => 'Profil', 'detail' => 'Memperbarui identitas profil akun.'],
+        'profile.password.update' => ['action' => 'Mengubah', 'module' => 'Keamanan', 'detail' => 'Memperbarui password akun.'],
+        'profile.otp.update' => ['action' => 'Mengubah', 'module' => 'Keamanan', 'detail' => 'Memperbarui pengaturan OTP email.'],
+        'superadmin.users.store' => ['action' => 'Menambah', 'module' => 'Data User', 'target_input' => 'nama', 'detail' => 'Menambahkan akun user baru.'],
+        'superadmin.users.update' => ['action' => 'Mengubah', 'module' => 'Data User', 'target_param' => 'userId', 'detail' => 'Mengubah data akun user.'],
+        'superadmin.users.assignment' => ['action' => 'Mengubah', 'module' => 'Data User', 'target_param' => 'userId', 'detail' => 'Memperbarui penugasan ruangan user.'],
+        'superadmin.rooms.store' => ['action' => 'Menambah', 'module' => 'Data Ruangan', 'target_input' => 'nama_ruangan', 'detail' => 'Menambahkan data ruangan.'],
+        'superadmin.rooms.update' => ['action' => 'Mengubah', 'module' => 'Data Ruangan', 'target_param' => 'roomId', 'detail' => 'Mengubah data ruangan.'],
+        'superadmin.rooms.delete' => ['action' => 'Menghapus', 'module' => 'Data Ruangan', 'target_param' => 'roomId', 'detail' => 'Menghapus data ruangan.'],
+        'superadmin.items.store' => ['action' => 'Menambah', 'module' => 'Inventaris', 'target_input' => 'nama_barang', 'detail' => 'Menambahkan data barang inventaris.'],
+        'superadmin.items.update' => ['action' => 'Mengubah', 'module' => 'Inventaris', 'target_param' => 'inventoryId', 'detail' => 'Mengubah data barang inventaris.'],
+        'superadmin.items.delete' => ['action' => 'Menghapus', 'module' => 'Inventaris', 'target_param' => 'inventoryId', 'detail' => 'Menghapus data barang inventaris.'],
+        'superadmin.requests.realization.store' => ['action' => 'Merealisasikan', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Merealisasikan pengajuan menjadi inventaris.'],
+        'hak_akses.update' => ['action' => 'Mengubah', 'module' => 'Hak Akses', 'detail' => 'Memperbarui hak akses menu.'],
+        'requests.store' => ['action' => 'Menambah', 'module' => 'Pengajuan', 'target_input' => 'request_type', 'detail' => 'Membuat pengajuan baru.'],
+        'requests.destroy' => ['action' => 'Menghapus', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Menghapus riwayat pengajuan.'],
+        'admin.requests.approve' => ['action' => 'Menyetujui', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Wali kelas menyetujui pengajuan.'],
+        'admin.requests.reject' => ['action' => 'Menolak', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Wali kelas menolak pengajuan.'],
+        'owner.requests.approve' => ['action' => 'Menyetujui', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Kepala sekolah menyetujui pengajuan.'],
+        'owner.requests.reject' => ['action' => 'Menolak', 'module' => 'Pengajuan', 'target_param' => 'requestId', 'detail' => 'Kepala sekolah menolak pengajuan.'],
+        'login.password' => ['action' => 'Login', 'module' => 'Login', 'detail' => 'Login menggunakan password.'],
+        'login.otp.verify' => ['action' => 'Login', 'module' => 'Login', 'detail' => 'Login menggunakan OTP email.'],
+        'login.google.callback' => ['action' => 'Login', 'module' => 'Login', 'detail' => 'Login menggunakan Google.'],
+        'logout' => ['action' => 'Logout', 'module' => 'Login', 'detail' => 'Keluar dari sistem.'],
     ];
 
     public function __construct()
@@ -206,24 +237,26 @@ class Control extends Controller
             $routeName = $request->route()?->getName();
             $menuKey = $routeName ? (self::ROUTE_MENU_MAP[$routeName] ?? null) : null;
 
-            if ($menuKey === null) {
-                return $next($request);
-            }
-
             $user = (array) session('user');
             $level = (int) ($user['level'] ?? 0);
 
-            if ($level <= 0) {
-                return $next($request);
+            if ($menuKey !== null) {
+                if ($level <= 0) {
+                    return $next($request);
+                }
+
+                if (! app(MenuAccessService::class)->userCanAccessMenu($level, $menuKey)) {
+                    return redirect()
+                        ->route('dashboard')
+                        ->with('error', 'Menu ini tidak tersedia untuk level akunmu saat ini.');
+                }
             }
 
-            if (! app(MenuAccessService::class)->userCanAccessMenu($level, $menuKey)) {
-                return redirect()
-                    ->route('dashboard')
-                    ->with('error', 'Menu ini tidak tersedia untuk level akunmu saat ini.');
-            }
+            $response = $next($request);
 
-            return $next($request);
+            $this->recordRouteActivity($request, $response);
+
+            return $response;
         });
     }
 
@@ -247,11 +280,10 @@ class Control extends Controller
     public function processLogin(Request $request): RedirectResponse
     {
         $credentials = $request->validate([
-            'login' => ['required', 'email', 'max:255'],
+            'login' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ], [
-            'login.required' => 'Email wajib diisi.',
-            'login.email' => 'Format email tidak valid.',
+            'login.required' => 'Nama wajib diisi.',
             'password.required' => 'Password wajib diisi.',
         ]);
 
@@ -262,7 +294,7 @@ class Control extends Controller
                 ->withInput($request->only('login'))
                 ->with('active_login_method', 'password')
                 ->withErrors([
-                    'password_login' => 'Email atau password salah.',
+                    'password_login' => 'Nama atau password salah.',
                 ]);
         }
 
@@ -287,6 +319,7 @@ class Control extends Controller
         }
 
         $this->storeAuthenticatedSession($request, $user);
+        $this->writeActivityLog($request, self::ACTIVITY_ROUTE_MAP['login.password'], $user);
 
         return redirect()->route('dashboard');
     }
@@ -447,6 +480,7 @@ class Control extends Controller
 
         $request->session()->forget(['otp_login_email', 'otp_login_user_id', 'otp_send_on_verify', 'otp_login_expires_at']);
         $this->storeAuthenticatedSession($request, $user);
+        $this->writeActivityLog($request, self::ACTIVITY_ROUTE_MAP['login.otp.verify'], $user);
 
         return redirect()->route('dashboard');
     }
@@ -543,6 +577,7 @@ class Control extends Controller
         );
 
         $this->storeAuthenticatedSession($request, $user);
+        $this->writeActivityLog($request, self::ACTIVITY_ROUTE_MAP['login.google.callback'], $user);
 
         return redirect()->route('dashboard');
     }
@@ -562,6 +597,152 @@ class Control extends Controller
         return view('dashboard', [
             'user' => $user,
             'dashboard' => $dashboard,
+        ]);
+    }
+
+    public function profile(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $sessionUser = (array) session('user');
+        $userModel = User::find((int) ($sessionUser['id_user'] ?? 0));
+
+        if (! $userModel) {
+            session()->forget(['logged_in', 'user']);
+            return redirect()->route('login');
+        }
+
+        $this->storeAuthenticatedSession(request(), $userModel);
+        $user = (array) session('user');
+
+        return view('profile', [
+            'user' => $user,
+            'dashboard' => $this->resolveDashboardData($user),
+        ]);
+    }
+
+    public function activityLogs(Request $request): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+        $level = (int) ($user['level'] ?? 0);
+
+        if (! in_array($level, [3, 4], true)) {
+            return redirect()->route('dashboard')->with('error', 'Catatan aktivitas hanya tersedia untuk superadmin dan kepala sekolah.');
+        }
+
+        $dashboard = $this->resolveDashboardData($user);
+        $filters = [
+            'name' => trim((string) $request->query('name', '')),
+            'role' => trim((string) $request->query('role', '')),
+            'date_start' => trim((string) $request->query('date_start', '')),
+            'date_end' => trim((string) $request->query('date_end', '')),
+        ];
+
+        $roles = [
+            1 => 'Ketua Kelas',
+            2 => 'Wali Kelas',
+            3 => 'Superadmin',
+            4 => 'Kepala Sekolah',
+        ];
+
+        $logs = null;
+        $summary = [
+            'total' => 0,
+            'today' => 0,
+            'login' => 0,
+            'data_changes' => 0,
+        ];
+
+        if (Schema::hasTable('activity_logs')) {
+            $query = DB::table('activity_logs')->orderByDesc('created_at');
+
+            if ($filters['name'] !== '') {
+                $query->where('user_name', 'like', '%'.$filters['name'].'%');
+            }
+
+            if ($filters['role'] !== '') {
+                $query->where('user_level', (int) $filters['role']);
+            }
+
+            if ($filters['date_start'] !== '') {
+                $query->whereDate('created_at', '>=', $filters['date_start']);
+            }
+
+            if ($filters['date_end'] !== '') {
+                $query->whereDate('created_at', '<=', $filters['date_end']);
+            }
+
+            $logs = $query->paginate(12)->withQueryString();
+
+            $summary = [
+                'total' => DB::table('activity_logs')->count(),
+                'today' => DB::table('activity_logs')->whereDate('created_at', now()->toDateString())->count(),
+                'login' => DB::table('activity_logs')->whereIn('action', ['Login', 'Logout'])->count(),
+                'data_changes' => DB::table('activity_logs')->whereNotIn('action', ['Login', 'Logout'])->count(),
+            ];
+        }
+
+        return view('activity_logs', [
+            'user' => $user,
+            'dashboard' => $dashboard,
+            'logs' => $logs,
+            'filters' => $filters,
+            'roles' => $roles,
+            'summary' => $summary,
+            'activityTableReady' => Schema::hasTable('activity_logs'),
+        ]);
+    }
+
+    public function security(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $sessionUser = (array) session('user');
+        $userModel = User::find((int) ($sessionUser['id_user'] ?? 0));
+
+        if (! $userModel) {
+            session()->forget(['logged_in', 'user']);
+            return redirect()->route('login');
+        }
+
+        $this->storeAuthenticatedSession(request(), $userModel);
+        $user = (array) session('user');
+
+        return view('security', [
+            'user' => $user,
+            'dashboard' => $this->resolveDashboardData($user),
+            'googleLoginReady' => $this->googleLoginReady(),
+        ]);
+    }
+
+    public function changePassword(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $sessionUser = (array) session('user');
+        $userModel = User::find((int) ($sessionUser['id_user'] ?? 0));
+
+        if (! $userModel) {
+            session()->forget(['logged_in', 'user']);
+            return redirect()->route('login');
+        }
+
+        $this->storeAuthenticatedSession(request(), $userModel);
+        $user = (array) session('user');
+
+        return view('change_password', [
+            'user' => $user,
+            'dashboard' => $this->resolveDashboardData($user),
         ]);
     }
 
@@ -673,7 +854,11 @@ class Control extends Controller
             'password' => Hash::make($validated['password']),
         ])->save();
 
-        return redirect()->route('profile.security')->with('success', 'Password berhasil diperbarui.');
+        if ($request->input('password_context') === 'profile_modal') {
+            return redirect()->route('profile.show')->with('success', 'Password berhasil diperbarui.');
+        }
+
+        return redirect()->route('profile.password.edit')->with('success', 'Password berhasil diperbarui.');
     }
 
     public function updateProfileOtp(Request $request): RedirectResponse
@@ -688,8 +873,12 @@ class Control extends Controller
             return redirect()->route('login');
         }
 
+        $redirectRoute = $request->input('otp_context') === 'security_page'
+            ? 'security.show'
+            : 'profile.security';
+
         if (! filled((string) $userModel->email)) {
-            return redirect()->route('profile.security')->with('error', 'Isi email akun terlebih dahulu sebelum mengaktifkan OTP.');
+            return redirect()->route($redirectRoute)->with('error', 'Isi email akun terlebih dahulu sebelum mengaktifkan OTP.');
         }
 
         $userModel->forceFill([
@@ -699,7 +888,7 @@ class Control extends Controller
         $this->storeAuthenticatedSession($request, $userModel->fresh());
 
         return redirect()
-            ->route('profile.security')
+            ->route($redirectRoute)
             ->with('success', $userModel->otp_enabled ? 'OTP email saat login sudah aktif.' : 'OTP email saat login sudah dinonaktifkan.');
     }
 
@@ -4806,12 +4995,12 @@ class Control extends Controller
     {
         $login = trim($login);
 
-        if ($login === '' || ! Schema::hasColumn('users', 'email')) {
+        if ($login === '' || ! Schema::hasColumn('users', 'nama')) {
             return null;
         }
 
         return User::query()
-            ->whereRaw($this->normalizedEmailSql('email').' = ?', [strtolower($login)])
+            ->whereRaw('LOWER(TRIM(nama)) = ?', [mb_strtolower($login)])
             ->first();
     }
 
@@ -5029,11 +5218,159 @@ class Control extends Controller
         return strtolower((string) $match->status_persetujuan) === 'disetujui' ? 'done' : 'rejected';
     }
 
+    private function recordRouteActivity(Request $request, mixed $response): void
+    {
+        $routeName = (string) ($request->route()?->getName() ?? '');
+
+        if ($routeName === '') {
+            return;
+        }
+
+        if (! in_array($request->method(), ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+            return;
+        }
+
+        if (method_exists($response, 'getStatusCode')) {
+            $statusCode = (int) $response->getStatusCode();
+
+            if ($statusCode >= 400) {
+                return;
+            }
+        }
+
+        $activity = self::ACTIVITY_ROUTE_MAP[$routeName] ?? $this->genericRouteActivity($routeName, $request);
+
+        if ($activity === null) {
+            return;
+        }
+
+        $this->writeActivityLog($request, $activity);
+    }
+
+    private function genericRouteActivity(string $routeName, Request $request): ?array
+    {
+        if (str_starts_with($routeName, 'chatbot.')) {
+            return null;
+        }
+
+        $method = $request->method();
+        $lowerRoute = strtolower($routeName);
+        $action = match (true) {
+            str_contains($lowerRoute, 'delete') || $method === 'DELETE' => 'Menghapus',
+            str_contains($lowerRoute, 'store') || str_contains($lowerRoute, 'create') => 'Menambah',
+            str_contains($lowerRoute, 'approve') => 'Menyetujui',
+            str_contains($lowerRoute, 'reject') => 'Menolak',
+            str_contains($lowerRoute, 'export') => 'Mengunduh',
+            default => 'Mengubah',
+        };
+
+        $module = match (true) {
+            str_contains($lowerRoute, 'user') => 'Data User',
+            str_contains($lowerRoute, 'room') || str_contains($lowerRoute, 'ruangan') => 'Data Ruangan',
+            str_contains($lowerRoute, 'item') || str_contains($lowerRoute, 'inventory') || str_contains($lowerRoute, 'inventaris') => 'Inventaris',
+            str_contains($lowerRoute, 'request') || str_contains($lowerRoute, 'pengajuan') => 'Pengajuan',
+            str_contains($lowerRoute, 'report') || str_contains($lowerRoute, 'laporan') => 'Laporan',
+            str_contains($lowerRoute, 'profile') || str_contains($lowerRoute, 'password') || str_contains($lowerRoute, 'otp') => 'Akun',
+            default => ucwords(str_replace(['.', '_', '-'], ' ', $routeName)),
+        };
+
+        return [
+            'action' => $action,
+            'module' => $module,
+            'detail' => 'Aktivitas sistem pada route '.$routeName.'.',
+        ];
+    }
+
+    private function writeActivityLog(Request $request, array $activity, ?User $actor = null): void
+    {
+        if (! Schema::hasTable('activity_logs')) {
+            return;
+        }
+
+        $sessionUser = (array) session('user', []);
+        $actorName = $actor?->nama ?? ($sessionUser['nama'] ?? 'Sistem');
+        $actorLevel = (int) ($actor?->level ?? ($sessionUser['level'] ?? 0));
+        $roleName = $this->activityRoleName($actorLevel);
+        $target = $this->resolveActivityTarget($request, $activity);
+        $roomContext = $this->resolveActivityRoomContext($request);
+
+        DB::table('activity_logs')->insert([
+            'id_user' => $actor?->id_user ?? ($sessionUser['id_user'] ?? null),
+            'user_name' => $actorName,
+            'user_level' => $actorLevel > 0 ? $actorLevel : null,
+            'role_name' => $roleName,
+            'action' => $activity['action'],
+            'module' => $activity['module'],
+            'target' => $target,
+            'detail' => $activity['detail'] ?? null,
+            'room_context' => $roomContext,
+            'ip_address' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function resolveActivityTarget(Request $request, array $activity): ?string
+    {
+        if (isset($activity['target_input'])) {
+            $value = $request->input($activity['target_input']);
+
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return trim((string) $value);
+            }
+        }
+
+        if (isset($activity['target_param'])) {
+            $value = $request->route($activity['target_param']);
+
+            if ($value !== null && trim((string) $value) !== '') {
+                return '#'.trim((string) $value);
+            }
+        }
+
+        foreach (['nama', 'nama_barang', 'nama_ruangan', 'email', 'request_type'] as $field) {
+            $value = $request->input($field);
+
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return trim((string) $value);
+            }
+        }
+
+        return null;
+    }
+
+    private function resolveActivityRoomContext(Request $request): ?string
+    {
+        foreach (['nama_ruangan', 'room_name', 'kode_ruangan'] as $field) {
+            $value = $request->input($field);
+
+            if (is_scalar($value) && trim((string) $value) !== '') {
+                return trim((string) $value);
+            }
+        }
+
+        return null;
+    }
+
+    private function activityRoleName(int $level): ?string
+    {
+        return match ($level) {
+            1 => 'Ketua Kelas',
+            2 => 'Wali Kelas',
+            3 => 'Superadmin',
+            4 => 'Kepala Sekolah',
+            default => null,
+        };
+    }
+
     /**
      * Handle logout.
      */
     public function logout(Request $request): RedirectResponse
     {
+        $this->writeActivityLog($request, self::ACTIVITY_ROUTE_MAP['logout']);
+
         session()->forget(['logged_in', 'user']);
         $request->session()->invalidate();
         $request->session()->regenerateToken();
