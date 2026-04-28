@@ -790,7 +790,7 @@ class ChatbotAccessService
     private function buildGuidedLeafAnswer(array $context, string $answerKey): string
     {
         return match ($answerKey) {
-            'room_lookup' => $this->buildRoomAnswer($context, $message),
+            'room_lookup' => $this->buildRoomAnswer($context),
             'inventory_summary' => $this->buildInventoryAnswer($context, 'inventaris'),
             'inventory_detail' => $this->buildInventoryAnswer($context, 'semua data barang di kelas saya'),
             'request_lookup' => $this->buildRequestAnswer($context),

@@ -43,6 +43,7 @@ Route::get('/superadmin/data-barang', [Control::class, 'superadminItems'])->name
 Route::post('/superadmin/data-barang', [Control::class, 'superadminStoreItem'])->name('superadmin.items.store');
 Route::post('/superadmin/data-barang/{inventoryId}/update', [Control::class, 'superadminUpdateItem'])->name('superadmin.items.update');
 Route::post('/superadmin/data-barang/{inventoryId}/delete', [Control::class, 'superadminDeleteItem'])->name('superadmin.items.delete');
+Route::get('/superadmin/chatbot', [Control::class, 'superadminChatbot'])->name('superadmin.chatbot');
 Route::get('/superadmin/tindak-lanjut-pengajuan', [Control::class, 'superadminRequestRealizations'])->name('superadmin.requests.realization');
 Route::post('/superadmin/tindak-lanjut-pengajuan/{requestId}/realize', [Control::class, 'superadminRealizeRequest'])->name('superadmin.requests.realization.store');
 Route::get('/superadmin/laporan', [Control::class, 'superadminReports'])->name('superadmin.reports');

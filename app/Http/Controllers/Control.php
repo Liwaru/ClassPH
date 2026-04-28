@@ -101,6 +101,7 @@ class Control extends Controller
                 'Kelola data akun',
                 'Kelola data ruangan',
                 'Kelola inventaris',
+                'Buka chatbot operasional',
                 'Realisasikan pengajuan',
             ],
             'panels' => [
@@ -177,6 +178,7 @@ class Control extends Controller
         'superadmin.items.store' => 'data_inventaris',
         'superadmin.items.update' => 'data_inventaris',
         'superadmin.items.delete' => 'data_inventaris',
+        'superadmin.chatbot' => 'chatbot_superadmin',
         'superadmin.requests.realization' => 'tindak_lanjut_pengajuan',
         'superadmin.requests.realization.store' => 'tindak_lanjut_pengajuan',
         'superadmin.reports' => 'laporan_superadmin',
@@ -496,7 +498,11 @@ class Control extends Controller
                 ]);
         }
 
-        return \Laravel\Socialite\Facades\Socialite::driver('google')->redirect();
+        return \Laravel\Socialite\Facades\Socialite::driver('google')
+            ->with([
+                'prompt' => 'select_account',
+            ])
+            ->redirect();
     }
 
     public function handleGoogleCallback(Request $request): RedirectResponse
@@ -2109,6 +2115,24 @@ class Control extends Controller
                 'room_type' => $roomType,
                 'condition' => $condition,
             ],
+        ]);
+    }
+
+    public function superadminChatbot(): View|RedirectResponse
+    {
+        if (! session('logged_in')) {
+            return redirect()->route('login');
+        }
+
+        $user = (array) session('user');
+
+        if ((int) ($user['level'] ?? 0) !== 3) {
+            return redirect()->route('dashboard');
+        }
+
+        return view('superadmin_chatbot', [
+            'user' => $user,
+            'dashboard' => $this->resolveDashboardData($user),
         ]);
     }
 

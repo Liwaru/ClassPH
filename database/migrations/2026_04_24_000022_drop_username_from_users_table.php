@@ -16,13 +16,16 @@ return new class extends Migration
             return;
         }
 
-        $hasUniqueIndex = collect(DB::select("
-            SELECT index_name
-            FROM information_schema.statistics
-            WHERE table_schema = DATABASE()
-              AND table_name = 'users'
-              AND index_name = 'users_username_unique'
-        "))->isNotEmpty();
+        $driver = Schema::getConnection()->getDriverName();
+        $hasUniqueIndex = $driver === 'mysql'
+            ? collect(DB::select("
+                SELECT index_name
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'users'
+                  AND index_name = 'users_username_unique'
+            "))->isNotEmpty()
+            : true;
 
         Schema::table('users', function (Blueprint $table) use ($hasUniqueIndex) {
             if ($hasUniqueIndex) {

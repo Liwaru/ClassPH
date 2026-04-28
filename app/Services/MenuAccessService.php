@@ -69,6 +69,12 @@ class MenuAccessService
             'route' => 'superadmin.items',
             'default_levels' => [3],
         ],
+        'chatbot_superadmin' => [
+            'label' => 'Chatbot',
+            'icon' => 'bi bi-chat-dots-fill',
+            'route' => 'superadmin.chatbot',
+            'default_levels' => [3],
+        ],
         'tindak_lanjut_pengajuan' => [
             'label' => 'Tindak Lanjut Pengajuan',
             'icon' => 'bi bi-list-check',
@@ -158,6 +164,7 @@ class MenuAccessService
         }
 
         $matrix[3]['hak_akses'] = true;
+        $matrix[3]['chatbot_superadmin'] = true;
 
         return $matrix;
     }
@@ -196,6 +203,7 @@ class MenuAccessService
         }
 
         $matrix[3]['hak_akses'] = true;
+        $matrix[3]['chatbot_superadmin'] = true;
 
         return $matrix;
     }
@@ -241,6 +249,10 @@ class MenuAccessService
             return true;
         }
 
+        if ($level === 3 && $menuKey === 'chatbot_superadmin') {
+            return true;
+        }
+
         if ($menuKey === 'catatan_aktivitas' && in_array($level, [3, 4], true)) {
             return true;
         }
@@ -266,6 +278,10 @@ class MenuAccessService
 
             if ($levelId === 3 && ! in_array('hak_akses', $selectedMenus, true)) {
                 $selectedMenus[] = 'hak_akses';
+            }
+
+            if ($levelId === 3 && ! in_array('chatbot_superadmin', $selectedMenus, true)) {
+                $selectedMenus[] = 'chatbot_superadmin';
             }
 
             foreach ($selectedMenus as $menuKey) {

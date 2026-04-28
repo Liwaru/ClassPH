@@ -12,6 +12,8 @@ return new class extends Migration
      */
     public function up(): void
     {
+        $driver = Schema::getConnection()->getDriverName();
+
         if (! Schema::hasColumn('users', 'email')) {
             Schema::table('users', function (Blueprint $table) {
                 $emailColumn = $table->string('email')->nullable();
@@ -29,13 +31,15 @@ return new class extends Migration
             ->where('email', '')
             ->update(['email' => null]);
 
-        $hasUniqueIndex = collect(DB::select("
-            SELECT index_name
-            FROM information_schema.statistics
-            WHERE table_schema = DATABASE()
-              AND table_name = 'users'
-              AND index_name = 'users_email_unique'
-        "))->isNotEmpty();
+        $hasUniqueIndex = $driver === 'mysql'
+            ? collect(DB::select("
+                SELECT index_name
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'users'
+                  AND index_name = 'users_email_unique'
+            "))->isNotEmpty()
+            : false;
 
         if (! $hasUniqueIndex) {
             Schema::table('users', function (Blueprint $table) {
@@ -53,13 +57,16 @@ return new class extends Migration
             return;
         }
 
-        $hasUniqueIndex = collect(DB::select("
-            SELECT index_name
-            FROM information_schema.statistics
-            WHERE table_schema = DATABASE()
-              AND table_name = 'users'
-              AND index_name = 'users_email_unique'
-        "))->isNotEmpty();
+        $driver = Schema::getConnection()->getDriverName();
+        $hasUniqueIndex = $driver === 'mysql'
+            ? collect(DB::select("
+                SELECT index_name
+                FROM information_schema.statistics
+                WHERE table_schema = DATABASE()
+                  AND table_name = 'users'
+                  AND index_name = 'users_email_unique'
+            "))->isNotEmpty()
+            : true;
 
         Schema::table('users', function (Blueprint $table) use ($hasUniqueIndex) {
             if ($hasUniqueIndex) {

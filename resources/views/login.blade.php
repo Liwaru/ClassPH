@@ -379,6 +379,10 @@
             margin-top: 0.9rem;
         }
 
+        .method-form {
+            margin: 0;
+        }
+
         .login-divider {
             display: flex;
             align-items: center;
@@ -410,6 +414,7 @@
             justify-content: center;
             font-size: 1.15rem;
             font-weight: 800;
+            cursor: pointer;
             transition: transform 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
         }
 
@@ -545,22 +550,26 @@
                 </label>
             </div>
 
-            <button type="submit" class="login-btn" id="loginSubmitBtn">
-                <span id="loginSubmitText">Masuk Sekarang</span>
-            </button>
+        <button type="submit" class="login-btn" id="loginSubmitBtn">
+            <span id="loginSubmitText">Masuk Sekarang</span>
+        </button>
         </form>
 
         <div class="login-divider">atau masuk dengan</div>
 
         <div class="login-methods">
-            <a href="{{ route('login.otp.email') }}" class="method-link email-method" title="Masuk dengan OTP Email" aria-label="Masuk dengan OTP Email">
-                <i class="fas fa-envelope-open-text"></i>
-                <span>Masuk dengan OTP Email</span>
-            </a>
-            <a href="{{ route('login.google.redirect') }}" class="method-link google-method" title="Login dengan Akun Google" aria-label="Login dengan Akun Google">
-                <i class="fab fa-google"></i>
-                <span>Login dengan Akun Google</span>
-            </a>
+            <form action="{{ route('login.otp.email') }}" method="GET" class="method-form">
+                <button type="submit" class="method-link email-method" title="Masuk dengan OTP Email" aria-label="Masuk dengan OTP Email">
+                    <i class="fas fa-envelope-open-text"></i>
+                    <span>Masuk dengan OTP Email</span>
+                </button>
+            </form>
+            <form action="{{ route('login.google.redirect') }}" method="GET" class="method-form">
+                <button type="submit" class="method-link google-method" title="Login dengan Akun Google" aria-label="Login dengan Akun Google">
+                    <i class="fab fa-google"></i>
+                    <span>Login dengan Akun Google</span>
+                </button>
+            </form>
         </div>
 
     </div>
