@@ -86,7 +86,24 @@
         .detail-value { color: #0f172a; font-weight: 800; line-height: 1.45; overflow-wrap: anywhere; }
         @media (max-width: 1160px) { .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .filter-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
         @media (max-width: 860px) { .activity-page, .app-shell.sidebar-collapsed .activity-page { margin-left: 0; padding: 1.2rem 1rem 2rem; } }
-        @media (max-width: 640px) { .summary-grid, .filter-form { grid-template-columns: 1fr; } .hero-card, .summary-card, .filter-card, .table-card { border-radius: 20px; } }
+        @media (max-width: 640px) {
+            .summary-grid, .filter-form { grid-template-columns: 1fr; }
+            .hero-card, .summary-card, .filter-card, .table-card { border-radius: 20px; }
+            .table-scroll { overflow-x: visible; }
+            table.mobile-card-table { min-width: 0; }
+            table.mobile-card-table thead { display: none; }
+            table.mobile-card-table,
+            table.mobile-card-table tbody,
+            table.mobile-card-table tr,
+            table.mobile-card-table td { display: block; width: 100%; }
+            table.mobile-card-table tr { padding: 0.35rem 0.9rem 0.95rem; border-bottom: 1px solid #f2e7df; }
+            table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.68rem 0; border-bottom: 1px dashed #f2e7df; text-align: right; }
+            table.mobile-card-table td:last-child { border-bottom: 0; }
+            table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 38%; color: var(--muted); font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
+            .row-actions { justify-content: flex-end; }
+            .pagination-wrap { display: grid; gap: 0.8rem; justify-items: start; }
+            .pagination-links { width: 100%; justify-content: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -170,7 +187,7 @@
                     <div class="empty-state">Belum ada aktivitas yang cocok dengan filter saat ini.</div>
                 @elseif ($filters['tab'] === 'aktivitas')
                     <div class="table-scroll">
-                        <table>
+                        <table class="mobile-card-table">
                             <thead>
                                 <tr>
                                     <th>No</th>
@@ -202,19 +219,19 @@
                                         };
                                     @endphp
                                     <tr>
-                                        <td>{{ $logs->firstItem() + $loop->index }}</td>
-                                        <td>
+                                        <td data-label="No">{{ $logs->firstItem() + $loop->index }}</td>
+                                        <td data-label="Tanggal & Waktu">
                                             <div class="cell-strong">{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y') }}</div>
                                             <div class="cell-muted">{{ \Carbon\Carbon::parse($log->created_at)->format('H:i') }}</div>
                                         </td>
-                                        <td class="cell-strong">{{ $log->user_name ?? '-' }}</td>
-                                        <td><span class="badge role-{{ $log->user_level ?? 0 }}">{{ $log->role_name ?? '-' }}</span></td>
-                                        <td><span class="badge {{ $actionClass }}">{{ $log->action }}</span></td>
-                                        <td>{{ $log->module }}</td>
-                                        <td>{{ $log->target ?? '-' }}</td>
-                                        <td>{{ $log->detail ?? '-' }}</td>
-                                        <td>{{ $log->room_context ?? '-' }}</td>
-                                        <td>
+                                        <td data-label="Nama User" class="cell-strong">{{ $log->user_name ?? '-' }}</td>
+                                        <td data-label="Role"><span class="badge role-{{ $log->user_level ?? 0 }}">{{ $log->role_name ?? '-' }}</span></td>
+                                        <td data-label="Aksi"><span class="badge {{ $actionClass }}">{{ $log->action }}</span></td>
+                                        <td data-label="Modul">{{ $log->module }}</td>
+                                        <td data-label="Target / Data">{{ $log->target ?? '-' }}</td>
+                                        <td data-label="Detail Aktivitas">{{ $log->detail ?? '-' }}</td>
+                                        <td data-label="Kelas / Ruangan">{{ $log->room_context ?? '-' }}</td>
+                                        <td data-label="Detail">
                                             <div class="row-actions">
                                                 <button
                                                     type="button"
@@ -264,7 +281,7 @@
                     <div class="empty-state">Belum ada data CRUD yang cocok dengan filter saat ini.</div>
                 @else
                     <div class="table-scroll">
-                        <table>
+                        <table class="mobile-card-table">
                             <thead>
                                 <tr>
                                     <th>No</th>
@@ -298,19 +315,19 @@
                                             && (int) ($user['level'] ?? 0) === 3;
                                     @endphp
                                     <tr>
-                                        <td>{{ $dataLogs->firstItem() + $loop->index }}</td>
-                                        <td>
+                                        <td data-label="No">{{ $dataLogs->firstItem() + $loop->index }}</td>
+                                        <td data-label="Tanggal & Waktu">
                                             <div class="cell-strong">{{ \Carbon\Carbon::parse($log->created_at)->format('d M Y') }}</div>
                                             <div class="cell-muted">{{ \Carbon\Carbon::parse($log->created_at)->format('H:i') }}</div>
                                         </td>
-                                        <td class="cell-strong">{{ $log->user_name ?? '-' }}</td>
-                                        <td><span class="badge role-{{ $log->user_level ?? 0 }}">{{ $log->role_name ?? '-' }}</span></td>
-                                        <td><span class="badge {{ $actionClass }}">{{ $log->action }}</span></td>
-                                        <td>{{ $log->module }}</td>
-                                        <td>{{ $log->target ?? '-' }}</td>
-                                        <td>{{ $log->detail ?? '-' }}</td>
-                                        <td>{{ $log->room_context ?? '-' }}</td>
-                                        <td>
+                                        <td data-label="Nama User" class="cell-strong">{{ $log->user_name ?? '-' }}</td>
+                                        <td data-label="Role"><span class="badge role-{{ $log->user_level ?? 0 }}">{{ $log->role_name ?? '-' }}</span></td>
+                                        <td data-label="Aksi CRUD"><span class="badge {{ $actionClass }}">{{ $log->action }}</span></td>
+                                        <td data-label="Modul">{{ $log->module }}</td>
+                                        <td data-label="Target / Data">{{ $log->target ?? '-' }}</td>
+                                        <td data-label="Detail Data">{{ $log->detail ?? '-' }}</td>
+                                        <td data-label="Kelas / Ruangan">{{ $log->room_context ?? '-' }}</td>
+                                        <td data-label="Aksi">
                                             @if ($canRestore)
                                                 <form method="POST" action="{{ route('activity.data.restore', $log->archive_id) }}" onsubmit="return confirm('Pulihkan data ini?');">
                                                     @csrf

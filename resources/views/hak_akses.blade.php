@@ -169,7 +169,7 @@
             .app-shell.sidebar-collapsed .hak-akses-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.5rem;
+                padding: 1.2rem 1rem 1.5rem;
             }
 
             #hak-akses-content {
@@ -188,6 +188,11 @@
                 float: none;
                 width: 100%;
             }
+            .access-table{min-width:0;} .access-table thead{display:none;}
+            .access-table,.access-table tbody,.access-table tr,.access-table td{display:block;width:100%;}
+            .access-table tr{padding:.55rem .75rem;border-bottom:1px solid #edf2f7;}
+            .access-table td,.access-table td:first-child{min-width:0;width:100%;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:.55rem 0;border-bottom:1px dashed #edf2f7;background:transparent!important;text-align:right;}
+            .access-table td:last-child{border-bottom:0;} .access-table td::before{content:attr(data-label);color:#64748b;font-size:.74rem;font-weight:800;text-transform:uppercase;text-align:left;}
         }
     </style>
 </head>
@@ -227,12 +232,12 @@
                                     <tbody>
                                         @foreach ($menus as $menu)
                                             <tr>
-                                                <td>{{ $menuLabels[$menu] ?? ucwords(str_replace('_', ' ', $menu)) }}</td>
+                                                <td data-label="Menu">{{ $menuLabels[$menu] ?? ucwords(str_replace('_', ' ', $menu)) }}</td>
                                                 @foreach ($levels as $levelId => $levelName)
                                                     @php
                                                         $isHakAksesSuperadmin = $menu === 'hak_akses' && (int) $levelId === 3;
                                                     @endphp
-                                                    <td>
+                                                    <td data-label="{{ $levelName }}">
                                                         <input
                                                             type="checkbox"
                                                             class="checkbox-style"

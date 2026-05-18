@@ -605,7 +605,7 @@
             .app-shell.sidebar-collapsed .superadmin-items-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.8rem;
+                padding: 1.2rem 1rem 1.8rem;
             }
 
             .hero-card,
@@ -627,6 +627,17 @@
             body:has(.app-shell.sidebar-collapsed) .modal-shell {
                 padding: 1rem;
             }
+        }
+        @media (max-width: 640px) {
+            .table-wrap { overflow-x: visible; }
+            table.mobile-card-table { min-width:0; }
+            table.mobile-card-table thead { display:none; }
+            table.mobile-card-table, table.mobile-card-table tbody, table.mobile-card-table tr, table.mobile-card-table td { display:block; width:100%; }
+            table.mobile-card-table tr { padding:.35rem .9rem .95rem; border-bottom:1px solid #f6e7df; }
+            table.mobile-card-table td { display:flex; justify-content:space-between; gap:1rem; padding:.68rem 0; border-bottom:1px dashed #f1ddd1; text-align:right; }
+            table.mobile-card-table td:last-child { border-bottom:0; }
+            table.mobile-card-table td::before { content:attr(data-label); flex:0 0 38%; color:#7b8794; font-size:.74rem; font-weight:800; text-transform:uppercase; text-align:left; }
+            table.mobile-card-table .action-group { justify-content:flex-end; }
         }
     </style>
 </head>
@@ -762,7 +773,7 @@
                         <div class="empty-state">Belum ada data barang yang cocok dengan filter saat ini.</div>
                     @else
                         <div class="table-wrap">
-                            <table>
+                            <table class="mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>No</th>
@@ -785,31 +796,31 @@
                                                 : ($item['jenis_ruangan_raw'] === 'kantor_guru' ? 'kantor' : 'lab');
                                         @endphp
                                         <tr>
-                                            <td>{{ $number }}</td>
-                                            <td>
+                                            <td data-label="No">{{ $number }}</td>
+                                            <td data-label="Nama Barang">
                                                 <div class="item-name">{{ $item['nama_barang'] }}</div>
                                                 <div class="item-meta">ID Inventaris: {{ $item['id_inventaris_ruangan'] }}</div>
                                             </td>
-                                            <td>{{ $item['nama_kategori'] }}</td>
-                                            <td>
+                                            <td data-label="Kategori">{{ $item['nama_kategori'] }}</td>
+                                            <td data-label="Ruangan">
                                                 <div class="item-name">{{ $item['nama_ruangan'] }}</div>
                                                 <div class="item-meta">{{ $item['kode_ruangan'] }}</div>
                                             </td>
-                                            <td><span class="pill {{ $roomTypeClass }}">{{ $item['jenis_ruangan'] }}</span></td>
-                                            <td>
+                                            <td data-label="Jenis Ruangan"><span class="pill {{ $roomTypeClass }}">{{ $item['jenis_ruangan'] }}</span></td>
+                                            <td data-label="Jumlah">
                                                 <div class="qty-stack">
                                                     <strong>{{ number_format($item['jumlah_total']) }} unit</strong>
                                                     <span class="item-meta">{{ number_format($item['jumlah_baik']) }} baik, {{ number_format($item['jumlah_rusak']) }} rusak</span>
                                                 </div>
                                             </td>
-                                            <td>
+                                            <td data-label="Kondisi">
                                                 <span class="pill {{ $item['kondisi_class'] }}">{{ $item['kondisi_label'] }}</span>
                                                 <div class="condition-copy">{{ $item['kondisi_note'] }}</div>
                                             </td>
-                                            <td>
+                                            <td data-label="Tanggal Masuk">
                                                 <div class="item-meta">{{ $item['tanggal_masuk'] }}</div>
                                             </td>
-                                            <td>
+                                            <td data-label="Aksi">
                                                 <div class="action-group">
                                                     <button type="button" class="row-action js-open-modal" data-modal="detail-item-{{ $item['id_inventaris_ruangan'] }}">
                                                         <i class="bi bi-eye"></i>

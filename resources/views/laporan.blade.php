@@ -120,18 +120,22 @@
         }
 
         .filter-form {
-            display: flex;
-            gap: 0.9rem;
-            flex-wrap: wrap;
-            align-items: end;
-            justify-content: space-between;
+            display: grid;
+            gap: 1rem;
         }
 
         .filter-left {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 0.9rem;
-            flex-wrap: wrap;
             align-items: end;
+        }
+
+        .filter-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            justify-content: flex-start;
         }
 
         .filter-field label {
@@ -358,19 +362,37 @@
 
         @media (max-width: 1200px) {
             .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .filter-left { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         }
 
         @media (max-width: 860px) {
+            .filter-left { grid-template-columns: repeat(2, minmax(0, 1fr)); }
             .superadmin-reports-page,
             .app-shell.sidebar-collapsed .superadmin-reports-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.8rem;
+                padding: 1.2rem 1rem 1.8rem;
             }
 
             .summary-grid {
                 grid-template-columns: 1fr;
             }
+        }
+
+        @media (max-width: 640px) {
+            .filter-left { grid-template-columns: 1fr; }
+            .filter-field input, .filter-field select { min-width: 0; width: 100%; }
+            .table-wrap { overflow-x: visible; }
+            table.mobile-card-table { min-width: 0; }
+            table.mobile-card-table thead { display: none; }
+            table.mobile-card-table,
+            table.mobile-card-table tbody,
+            table.mobile-card-table tr,
+            table.mobile-card-table td { display: block; width: 100%; }
+            table.mobile-card-table tr { padding: 0.35rem 1rem 0.95rem; border-bottom: 1px solid #f6e7df; }
+            table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.72rem 0; border-bottom: 1px dashed #f6e7df; text-align: right; }
+            table.mobile-card-table td:last-child { border-bottom: 0; }
+            table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 42%; color: #7b8794; font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
         }
     </style>
 </head>
@@ -535,7 +557,7 @@
                         <div class="empty-card">Belum ada data laporan yang cocok dengan filter saat ini.</div>
                     @else
                         <div class="table-wrap">
-                            <table>
+                            <table class="mobile-card-table">
                                 <thead>
                                     @if ($section === 'incoming')
                                         <tr>
@@ -583,43 +605,43 @@
                                     @foreach ($rows as $row)
                                         @if ($section === 'incoming')
                                             <tr>
-                                                <td>{{ $row['tanggal'] }}</td>
-                                                <td>{{ $row['barang'] }}</td>
-                                                <td>{{ $row['ruangan'] }}</td>
-                                                <td>{{ $row['jenis_ruangan'] }}</td>
-                                                <td>{{ number_format($row['jumlah']) }}</td>
-                                                <td>{{ $row['sumber'] }}</td>
-                                                <td>{{ $row['ditambahkan_oleh'] }}</td>
+                                                <td data-label="Tanggal">{{ $row['tanggal'] }}</td>
+                                                <td data-label="Nama Barang">{{ $row['barang'] }}</td>
+                                                <td data-label="Ruangan">{{ $row['ruangan'] }}</td>
+                                                <td data-label="Jenis Ruangan">{{ $row['jenis_ruangan'] }}</td>
+                                                <td data-label="Jumlah">{{ number_format($row['jumlah']) }}</td>
+                                                <td data-label="Sumber">{{ $row['sumber'] }}</td>
+                                                <td data-label="Ditambahkan Oleh">{{ $row['ditambahkan_oleh'] }}</td>
                                             </tr>
                                         @elseif ($section === 'condition')
                                             <tr>
-                                                <td>{{ $row['barang'] }}</td>
-                                                <td>{{ $row['ruangan'] }}</td>
-                                                <td>{{ number_format($row['jumlah_baik']) }}</td>
-                                                <td>{{ number_format($row['jumlah_rusak']) }}</td>
-                                                <td><span class="pill {{ $row['kondisi_class'] }}">{{ $row['kondisi'] }}</span></td>
-                                                <td>{{ $row['keterangan'] }}</td>
+                                                <td data-label="Nama Barang">{{ $row['barang'] }}</td>
+                                                <td data-label="Ruangan">{{ $row['ruangan'] }}</td>
+                                                <td data-label="Jumlah Baik">{{ number_format($row['jumlah_baik']) }}</td>
+                                                <td data-label="Jumlah Rusak">{{ number_format($row['jumlah_rusak']) }}</td>
+                                                <td data-label="Kondisi"><span class="pill {{ $row['kondisi_class'] }}">{{ $row['kondisi'] }}</span></td>
+                                                <td data-label="Keterangan">{{ $row['keterangan'] }}</td>
                                             </tr>
                                         @elseif ($section === 'requests')
                                             <tr>
-                                                <td>{{ $row['pengaju'] }}</td>
-                                                <td>{{ $row['barang'] }}</td>
-                                                <td>{{ $row['ruangan'] }}</td>
-                                                <td>{{ number_format($row['jumlah']) }}</td>
-                                                <td>{{ $row['tanggal_pengajuan'] }}</td>
-                                                <td>{{ $row['tanggal_realisasi'] }}</td>
-                                                <td>{{ $row['status_admin'] }}</td>
-                                                <td>{{ $row['status_owner'] }}</td>
-                                                <td><span class="pill {{ $row['status_realisasi_class'] }}">{{ $row['status_realisasi'] }}</span></td>
+                                                <td data-label="Pengaju">{{ $row['pengaju'] }}</td>
+                                                <td data-label="Barang">{{ $row['barang'] }}</td>
+                                                <td data-label="Ruangan">{{ $row['ruangan'] }}</td>
+                                                <td data-label="Jumlah">{{ number_format($row['jumlah']) }}</td>
+                                                <td data-label="Tanggal Pengajuan">{{ $row['tanggal_pengajuan'] }}</td>
+                                                <td data-label="Tanggal Realisasi">{{ $row['tanggal_realisasi'] }}</td>
+                                                <td data-label="Status Admin">{{ $row['status_admin'] }}</td>
+                                                <td data-label="Status Owner">{{ $row['status_owner'] }}</td>
+                                                <td data-label="Status Realisasi"><span class="pill {{ $row['status_realisasi_class'] }}">{{ $row['status_realisasi'] }}</span></td>
                                             </tr>
                                         @else
                                             <tr>
-                                                <td>{{ $row['ruangan'] }}</td>
-                                                <td>{{ $row['barang'] }}</td>
-                                                <td>{{ $row['kategori'] }}</td>
-                                                <td>{{ number_format($row['jumlah']) }}</td>
-                                                <td><span class="pill {{ $row['kondisi_class'] }}">{{ $row['kondisi'] }}</span></td>
-                                                <td>{{ $row['tanggal_masuk'] }}</td>
+                                                <td data-label="Ruangan">{{ $row['ruangan'] }}</td>
+                                                <td data-label="Barang">{{ $row['barang'] }}</td>
+                                                <td data-label="Kategori">{{ $row['kategori'] }}</td>
+                                                <td data-label="Jumlah">{{ number_format($row['jumlah']) }}</td>
+                                                <td data-label="Kondisi"><span class="pill {{ $row['kondisi_class'] }}">{{ $row['kondisi'] }}</span></td>
+                                                <td data-label="Tanggal Masuk">{{ $row['tanggal_masuk'] }}</td>
                                             </tr>
                                         @endif
                                     @endforeach

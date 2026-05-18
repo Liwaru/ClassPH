@@ -1,4 +1,8 @@
 <style>
+    .mobile-appbar,
+    .mobile-sidebar-backdrop {
+        display: none;
+    }
     .sidebar {
         position: fixed;
         inset: 0 auto 0 0;
@@ -362,16 +366,42 @@
     }
 
     @media (max-width: 860px) {
+        .mobile-appbar {
+            position: sticky;
+            top: 0;
+            z-index: 1200;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.85rem;
+            min-height: 68px;
+            padding: 0.8rem 0.9rem;
+            background: linear-gradient(135deg, #ff7a21, #ff5900);
+            color: #ffffff;
+            box-shadow: 0 14px 28px -22px rgba(225, 79, 0, 0.72);
+        }
+        .mobile-appbar-brand { display:flex; align-items:center; gap:0.7rem; min-width:0; color:#fff; text-decoration:none; }
+        .mobile-appbar-logo { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+        .mobile-appbar-logo img { width:40px; height:auto; object-fit:contain; }
+        .mobile-appbar-title { font-size:1.08rem; font-weight:800; white-space:nowrap; }
+        .mobile-menu-toggle { width:42px; height:42px; display:inline-flex; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.2); border-radius:14px; background:rgba(255,255,255,.14); color:#fff; font-size:1.3rem; cursor:pointer; }
+        .mobile-sidebar-backdrop { position:fixed; inset:0; z-index:1250; background:rgba(15,23,42,.42); opacity:0; visibility:hidden; transition:opacity .24s ease, visibility .24s ease; }
+        .app-shell.sidebar-mobile-open .mobile-sidebar-backdrop { display:block; opacity:1; visibility:visible; }
         .sidebar {
-            position: static;
-            width: 100%;
-            height: auto;
-            min-height: auto;
-            border-radius: 0 0 24px 24px;
-            transform: none !important;
+            position: fixed;
+            inset: 0 auto 0 0;
+            width: min(320px, calc(100vw - 3rem));
+            height: 100dvh;
+            min-height: 100dvh;
+            border-radius: 0 24px 24px 0;
+            transform: translateX(-104%) !important;
             padding: 1rem 0.85rem 0.9rem;
             overflow-x: hidden;
+            overflow-y: auto;
+            z-index: 1300;
+            box-shadow: 18px 0 42px rgba(31, 41, 55, 0.22);
         }
+        .app-shell.sidebar-mobile-open .sidebar { transform: translateX(0) !important; }
 
         .sidebar-toggle {
             display: none;
@@ -390,6 +420,10 @@
         .sidebar-brand-text {
             font-size: 1.32rem;
         }
+
+        .sidebar-account { margin-top: auto; }
+        .sidebar-account.open { padding-bottom: 1rem; }
+        .account-menu { position: static; width: auto; margin-top: 0.65rem; }
     }
 
     @media (max-width: 640px) {
@@ -439,12 +473,6 @@
             font-size: 0.92rem;
         }
 
-        .account-menu {
-            left: 0.75rem;
-            right: 0.75rem;
-            bottom: 0.85rem;
-            width: auto;
-        }
     }
 
     html {
@@ -747,10 +775,30 @@
         .table-responsive td {
             max-width: 18rem;
         }
+
+        .table-wrap table.mobile-card-table {
+            display: block !important;
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+        .table-wrap table.mobile-card-table tbody,
+        .table-wrap table.mobile-card-table tr { display:block !important; width:100% !important; }
+        .table-wrap table.mobile-card-table td { max-width:none !important; width:100% !important; }
     }
 </style>
 
-<aside class="sidebar">
+<header class="mobile-appbar">
+    <a class="mobile-appbar-brand" href="{{ route('dashboard') }}">
+        <span class="mobile-appbar-logo"><img src="{{ asset('images/Infrasph.png') }}" alt="Logo InfraSPH"></span>
+        <span class="mobile-appbar-title">InfraSPH</span>
+    </a>
+    <button type="button" class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Buka navigasi" aria-expanded="false" aria-controls="sidebarNavigation">
+        <i class="bi bi-list"></i>
+    </button>
+</header>
+<div class="mobile-sidebar-backdrop" id="mobileSidebarBackdrop" aria-hidden="true"></div>
+
+<aside class="sidebar" id="sidebarNavigation">
     <div class="sidebar-brand">
         <a class="sidebar-brand-link" href="{{ route('dashboard') }}">
             <span class="sidebar-brand-main">
@@ -845,6 +893,8 @@
         function initSidebarToggle() {
             const appShell = document.getElementById('appShell');
             const toggleButton = document.getElementById('sidebarToggle');
+            const mobileToggleButton = document.getElementById('mobileMenuToggle');
+            const mobileBackdrop = document.getElementById('mobileSidebarBackdrop');
             const account = document.getElementById('sidebarAccount');
             const accountToggle = document.getElementById('accountMenuToggle');
 
@@ -875,6 +925,26 @@
                     }
                 });
             }
+
+            function closeMobileSidebar() {
+                if (!appShell || !mobileToggleButton) { return; }
+                appShell.classList.remove('sidebar-mobile-open');
+                mobileToggleButton.setAttribute('aria-expanded', 'false');
+                document.body.style.overflow = '';
+                closeAccountMenu();
+            }
+            function openMobileSidebar() {
+                if (!appShell || !mobileToggleButton) { return; }
+                appShell.classList.add('sidebar-mobile-open');
+                mobileToggleButton.setAttribute('aria-expanded', 'true');
+                document.body.style.overflow = 'hidden';
+            }
+            mobileToggleButton?.addEventListener('click', function () {
+                if (appShell?.classList.contains('sidebar-mobile-open')) { closeMobileSidebar(); } else { openMobileSidebar(); }
+            });
+            mobileBackdrop?.addEventListener('click', closeMobileSidebar);
+            document.addEventListener('keydown', function (event) { if (event.key === 'Escape') { closeMobileSidebar(); } });
+            window.addEventListener('resize', function () { if (window.innerWidth > 860) { closeMobileSidebar(); } });
 
             if (!appShell || !toggleButton || window.innerWidth <= 860) {
                 return;

@@ -587,7 +587,7 @@
             .app-shell.sidebar-collapsed .superadmin-users-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.8rem;
+                padding: 1.2rem 1rem 1.8rem;
             }
 
             .summary-grid,
@@ -608,6 +608,14 @@
             .table-header-actions .action-btn {
                 width: 100%;
             }
+        }
+        @media (max-width:640px) {
+            .table-wrap{overflow-x:visible;} table.mobile-card-table{min-width:0;} table.mobile-card-table thead{display:none;}
+            table.mobile-card-table,table.mobile-card-table tbody,table.mobile-card-table tr,table.mobile-card-table td{display:block;width:100%;}
+            table.mobile-card-table tr{padding:.35rem .9rem .95rem;border-bottom:1px solid #f6e7df;}
+            table.mobile-card-table td{display:flex;justify-content:space-between;gap:1rem;padding:.72rem 0;border-bottom:1px dashed #f1ddd1;text-align:right;}
+            table.mobile-card-table td:last-child{border-bottom:0;} table.mobile-card-table td::before{content:attr(data-label);flex:0 0 34%;color:#7b8794;font-size:.74rem;font-weight:800;text-transform:uppercase;text-align:left;}
+            table.mobile-card-table .assignment-stack{justify-items:end;} table.mobile-card-table .action-group{justify-content:flex-end;}
         }
     </style>
 </head>
@@ -723,7 +731,7 @@
                         <div class="empty-state">Belum ada data user yang cocok dengan filter saat ini.</div>
                     @else
                         <div class="table-wrap">
-                            <table>
+                            <table class="mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>Nama</th>
@@ -738,18 +746,18 @@
                                 <tbody>
                                     @foreach ($userRows as $row)
                                         <tr>
-                                            <td>
+                                            <td data-label="Nama">
                                                 <div class="user-name">{{ $row['nama'] }}</div>
                                                 <div class="user-meta">
                                                     ID User: {{ $row['id_user'] }}
                                                 </div>
                                             </td>
-                                            <td>{{ $row['email_label'] }}</td>
-                                            <td>{{ $row['nis'] }}</td>
-                                            <td>
+                                            <td data-label="Email">{{ $row['email_label'] }}</td>
+                                            <td data-label="NIS">{{ $row['nis'] }}</td>
+                                            <td data-label="Role">
                                                 <span class="pill {{ $row['role_class'] }}">{{ $row['role_label'] }}</span>
                                             </td>
-                                            <td>
+                                            <td data-label="Ruangan/Kelas">
                                                 @if ($row['assignment_count'] === 0)
                                                     <span class="muted-text">Belum ada penugasan</span>
                                                 @else
@@ -765,7 +773,7 @@
                                                     </div>
                                                 @endif
                                             </td>
-                                            <td>
+                                            <td data-label="Peran Ruangan">
                                                 @if ($row['assignment_count'] === 0)
                                                     <span class="muted-text">Belum ditentukan</span>
                                                 @else
@@ -779,7 +787,7 @@
                                                     </div>
                                                 @endif
                                             </td>
-                                            <td>
+                                            <td data-label="Aksi">
                                                 <div class="action-group">
                                                     <button type="button" class="row-action js-open-modal" data-modal="edit-user-{{ $row['id_user'] }}">
                                                         <i class="bi bi-pencil-square"></i>

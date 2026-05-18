@@ -520,6 +520,38 @@
                 table-layout: auto;
             }
         }
+
+        @media (max-width: 640px) {
+            .table-wrap { overflow-x: visible; }
+            .inventory-table.mobile-card-table { min-width: 0; table-layout: auto; }
+            .inventory-table.mobile-card-table thead { display: none; }
+            .inventory-table.mobile-card-table,
+            .inventory-table.mobile-card-table tbody,
+            .inventory-table.mobile-card-table tr,
+            .inventory-table.mobile-card-table td { display: block; width: 100%; }
+            .inventory-table.mobile-card-table tr {
+                padding: 0.35rem 1rem 0.95rem;
+                border-bottom: 1px solid #f6e7df;
+            }
+            .inventory-table.mobile-card-table td {
+                display: flex;
+                justify-content: space-between;
+                gap: 1rem;
+                padding: 0.72rem 0;
+                border-bottom: 1px dashed #f6e7df;
+                text-align: right;
+            }
+            .inventory-table.mobile-card-table td:last-child { border-bottom: 0; }
+            .inventory-table.mobile-card-table td::before {
+                content: attr(data-label);
+                flex: 0 0 40%;
+                color: #7b8794;
+                font-size: 0.74rem;
+                font-weight: 800;
+                text-align: left;
+                text-transform: uppercase;
+            }
+        }
     </style>
 </head>
 <body>
@@ -583,7 +615,7 @@
             @else
                 <section class="table-card">
                     <div class="table-wrap">
-                        <table class="inventory-table">
+                        <table class="inventory-table mobile-card-table">
                             <thead>
                                 <tr>
                                     <th style="width: 28%;">Nama Barang</th>
@@ -598,16 +630,16 @@
                             <tbody>
                                 @foreach ($inventoryRows as $row)
                                     <tr>
-                                        <td>
+                                        <td data-label="Nama Barang">
                                             <div class="inventory-name">{{ $row['nama_barang'] }}</div>
                                             <div class="inventory-unit">Rekap inventaris seluruh sekolah</div>
                                         </td>
-                                        <td><span class="inventory-number">{{ number_format($row['total_barang']) }}</span></td>
-                                        <td><span class="inventory-number">{{ number_format($row['total_baik']) }}</span></td>
-                                        <td><span class="inventory-number">{{ number_format($row['total_rusak']) }}</span></td>
-                                        <td>{{ $row['satuan'] }}</td>
-                                        <td><span class="status-badge {{ $row['status_class'] }}">{{ $row['status_label'] }}</span></td>
-                                        <td>
+                                        <td data-label="Total"><span class="inventory-number">{{ number_format($row['total_barang']) }}</span></td>
+                                        <td data-label="Baik"><span class="inventory-number">{{ number_format($row['total_baik']) }}</span></td>
+                                        <td data-label="Rusak"><span class="inventory-number">{{ number_format($row['total_rusak']) }}</span></td>
+                                        <td data-label="Satuan">{{ $row['satuan'] }}</td>
+                                        <td data-label="Status"><span class="status-badge {{ $row['status_class'] }}">{{ $row['status_label'] }}</span></td>
+                                        <td data-label="Aksi">
                                             <button
                                                 type="button"
                                                 class="detail-btn js-inventory-detail"

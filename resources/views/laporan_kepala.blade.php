@@ -419,14 +419,22 @@
                 grid-template-columns: 1fr;
             }
 
-            .table-wrap {
-                overflow-x: auto;
-            }
+            .table-wrap { overflow-x: auto; }
+            .report-table { min-width: 820px; table-layout: auto; }
+        }
 
-            .report-table {
-                min-width: 820px;
-                table-layout: auto;
-            }
+        @media (max-width: 640px) {
+            .table-wrap { overflow-x: visible; }
+            .report-table.mobile-card-table { min-width: 0; }
+            .report-table.mobile-card-table thead { display: none; }
+            .report-table.mobile-card-table,
+            .report-table.mobile-card-table tbody,
+            .report-table.mobile-card-table tr,
+            .report-table.mobile-card-table td { display: block; width: 100%; }
+            .report-table.mobile-card-table tr { padding: 0.35rem 1rem 0.95rem; border-bottom: 1px solid #f6e7df; }
+            .report-table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.72rem 0; border-bottom: 1px dashed #f6e7df; text-align: right; }
+            .report-table.mobile-card-table td:last-child { border-bottom: 0; }
+            .report-table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 42%; color: #7b8794; font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
         }
     </style>
 </head>
@@ -519,7 +527,7 @@
                 @else
                     <section class="table-card">
                         <div class="table-wrap">
-                            <table class="report-table">
+                            <table class="report-table mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>Barang</th>
@@ -531,10 +539,10 @@
                                 <tbody>
                                     @foreach ($inventoryRows as $row)
                                         <tr>
-                                            <td><div class="cell-primary">{{ $row['nama_barang'] }}</div></td>
-                                            <td>{{ number_format($row['total']) }}</td>
-                                            <td>{{ number_format($row['baik']) }}</td>
-                                            <td>{{ number_format($row['rusak']) }}</td>
+                                            <td data-label="Barang"><div class="cell-primary">{{ $row['nama_barang'] }}</div></td>
+                                            <td data-label="Total">{{ number_format($row['total']) }}</td>
+                                            <td data-label="Baik">{{ number_format($row['baik']) }}</td>
+                                            <td data-label="Rusak">{{ number_format($row['rusak']) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -571,7 +579,7 @@
                 @else
                     <section class="table-card">
                         <div class="table-wrap">
-                            <table class="report-table">
+                            <table class="report-table mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>Tanggal</th>
@@ -586,13 +594,13 @@
                                 <tbody>
                                     @foreach ($requestRows as $row)
                                         <tr>
-                                            <td>{{ $row['tanggal'] }}</td>
-                                            <td><div class="cell-primary">{{ $row['barang'] }}</div></td>
-                                            <td>{{ $row['kelas'] }}</td>
-                                            <td>{{ $row['peminta'] }}</td>
-                                            <td>{{ $row['jenis'] }}</td>
-                                            <td>{{ number_format($row['jumlah']) }}</td>
-                                            <td><span class="badge {{ $row['status_class'] }}">{{ $row['status'] }}</span></td>
+                                            <td data-label="Tanggal">{{ $row['tanggal'] }}</td>
+                                            <td data-label="Barang"><div class="cell-primary">{{ $row['barang'] }}</div></td>
+                                            <td data-label="Kelas">{{ $row['kelas'] }}</td>
+                                            <td data-label="Peminta">{{ $row['peminta'] }}</td>
+                                            <td data-label="Jenis">{{ $row['jenis'] }}</td>
+                                            <td data-label="Jumlah">{{ number_format($row['jumlah']) }}</td>
+                                            <td data-label="Status"><span class="badge {{ $row['status_class'] }}">{{ $row['status'] }}</span></td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -629,7 +637,7 @@
                 @else
                     <section class="table-card">
                         <div class="table-wrap">
-                            <table class="report-table">
+                            <table class="report-table mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>Kelas</th>
@@ -642,14 +650,14 @@
                                 <tbody>
                                     @foreach ($classRows as $row)
                                         <tr>
-                                            <td>
+                                            <td data-label="Kelas">
                                                 <div class="cell-primary">{{ $row['kelas'] }}</div>
                                                 <div class="cell-secondary">{{ $row['kode'] }}</div>
                                             </td>
-                                            <td>{{ number_format($row['total_barang']) }}</td>
-                                            <td>{{ number_format($row['baik']) }}</td>
-                                            <td>{{ number_format($row['rusak']) }}</td>
-                                            <td>{{ number_format($row['pengajuan']) }}</td>
+                                            <td data-label="Total Barang">{{ number_format($row['total_barang']) }}</td>
+                                            <td data-label="Baik">{{ number_format($row['baik']) }}</td>
+                                            <td data-label="Rusak">{{ number_format($row['rusak']) }}</td>
+                                            <td data-label="Pengajuan">{{ number_format($row['pengajuan']) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>

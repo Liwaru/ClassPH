@@ -497,7 +497,7 @@
             .app-shell.sidebar-collapsed .superadmin-realization-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.8rem;
+                padding: 1.2rem 1rem 1.8rem;
             }
 
             .summary-grid,
@@ -516,6 +516,21 @@
             body:has(.app-shell.sidebar-collapsed) .modal-shell {
                 padding: 1rem;
             }
+        }
+
+        @media (max-width: 640px) {
+            .table-wrap { overflow-x: visible; }
+            table.mobile-card-table { min-width: 0; }
+            table.mobile-card-table thead { display: none; }
+            table.mobile-card-table,
+            table.mobile-card-table tbody,
+            table.mobile-card-table tr,
+            table.mobile-card-table td { display: block; width: 100%; }
+            table.mobile-card-table tr { padding: 0.35rem 1rem 0.95rem; border-bottom: 1px solid #f6e7df; }
+            table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.72rem 0; border-bottom: 1px dashed #f6e7df; text-align: right; }
+            table.mobile-card-table td:last-child { border-bottom: 0; }
+            table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 42%; color: #7b8794; font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
+            .action-group { justify-content: flex-end; }
         }
     </style>
 </head>
@@ -625,7 +640,7 @@
                         <div class="empty-state">Belum ada pengajuan yang cocok dengan filter saat ini.</div>
                     @else
                         <div class="table-wrap">
-                            <table>
+                            <table class="mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>No</th>
@@ -642,21 +657,21 @@
                                 <tbody>
                                     @foreach ($requestRows as $index => $requestRow)
                                         <tr>
-                                            <td>{{ ($requests->firstItem() ?? 1) + $index }}</td>
-                                            <td>
+                                            <td data-label="No">{{ ($requests->firstItem() ?? 1) + $index }}</td>
+                                            <td data-label="Nama Pengaju">
                                                 <div class="primary-text">{{ $requestRow['pengaju'] }}</div>
                                                 <div class="muted-text">{{ $requestRow['kode_permintaan'] }}</div>
                                             </td>
-                                            <td>
+                                            <td data-label="Ruangan">
                                                 <div class="primary-text">{{ $requestRow['ruangan'] }}</div>
                                                 <div class="muted-text">{{ $requestRow['kode_ruangan'] }}</div>
                                             </td>
-                                            <td>{{ $requestRow['barang'] !== '' ? $requestRow['barang'] : '-' }}</td>
-                                            <td>{{ number_format($requestRow['jumlah']) }} item</td>
-                                            <td><span class="pill {{ $requestRow['approval_class'] }}">{{ $requestRow['approval_label'] }}</span></td>
-                                            <td>{{ $requestRow['tanggal_label'] }}</td>
-                                            <td><span class="pill {{ $requestRow['realisasi_class'] }}">{{ $requestRow['realisasi_label'] }}</span></td>
-                                            <td>
+                                            <td data-label="Barang">{{ $requestRow['barang'] !== '' ? $requestRow['barang'] : '-' }}</td>
+                                            <td data-label="Jumlah">{{ number_format($requestRow['jumlah']) }} item</td>
+                                            <td data-label="Status Approval"><span class="pill {{ $requestRow['approval_class'] }}">{{ $requestRow['approval_label'] }}</span></td>
+                                            <td data-label="Tanggal Pengajuan">{{ $requestRow['tanggal_label'] }}</td>
+                                            <td data-label="Status Realisasi"><span class="pill {{ $requestRow['realisasi_class'] }}">{{ $requestRow['realisasi_label'] }}</span></td>
+                                            <td data-label="Aksi">
                                                 <div class="action-group">
                                                     <button type="button" class="row-action js-open-modal" data-modal="detail-request-{{ $requestRow['id_permintaan'] }}">
                                                         <i class="bi bi-eye"></i>

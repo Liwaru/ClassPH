@@ -393,6 +393,11 @@
                 padding: 1.2rem 1rem 2rem;
             }
         }
+
+        @media (max-width: 640px) {
+            .button-row { flex-wrap: wrap; }
+            .button-row .btn { width: 100%; }
+        }
     </style>
 </head>
 <body>

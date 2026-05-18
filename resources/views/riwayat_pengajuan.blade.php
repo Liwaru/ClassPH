@@ -239,8 +239,17 @@
                 padding: 1.2rem 1rem 2rem;
             }
 
-            .table-wrap { overflow-x: auto; }
-            .request-table { min-width: 900px; table-layout: auto; }
+            .table-wrap { overflow-x: visible; }
+            .request-table.mobile-card-table { min-width: 0; table-layout: auto; }
+            .request-table.mobile-card-table thead { display: none; }
+            .request-table.mobile-card-table,
+            .request-table.mobile-card-table tbody,
+            .request-table.mobile-card-table tr,
+            .request-table.mobile-card-table td { display: block; width: 100%; }
+            .request-table.mobile-card-table tr { padding: 0.35rem 1rem 0.95rem; border-bottom: 1px solid #f5e7de; }
+            .request-table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.72rem 0; border-bottom: 1px dashed #f5e7de; text-align: right; }
+            .request-table.mobile-card-table td:last-child { border-bottom: 0; }
+            .request-table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 38%; color: #667085; font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
         }
     </style>
 </head>
@@ -287,7 +296,7 @@
                 @else
                     <section class="table-card">
                         <div class="table-wrap">
-                            <table class="request-table">
+                            <table class="request-table mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>Tanggal</th>
@@ -301,15 +310,15 @@
                                 <tbody>
                                     @foreach ($requests as $request)
                                         <tr class="request-record" data-status="{{ $request['status_key'] }}">
-                                            <td>
+                                            <td data-label="Tanggal">
                                                 <div>{{ $request['tanggal_label'] }}</div>
                                                 <div class="request-code">{{ $request['kode_permintaan'] }}</div>
                                             </td>
-                                            <td>{{ $request['jenis'] }}</td>
-                                            <td class="request-item">{{ $request['barang_ringkas'] }}</td>
-                                            <td>{{ $request['jumlah_ringkas'] }}</td>
-                                            <td><span class="badge {{ $request['status_class'] }}">{{ $request['status'] }}</span></td>
-                                            <td>
+                                            <td data-label="Jenis">{{ $request['jenis'] }}</td>
+                                            <td data-label="Barang" class="request-item">{{ $request['barang_ringkas'] }}</td>
+                                            <td data-label="Jumlah">{{ $request['jumlah_ringkas'] }}</td>
+                                            <td data-label="Status"><span class="badge {{ $request['status_class'] }}">{{ $request['status'] }}</span></td>
+                                            <td data-label="Aksi">
                                                 <form method="POST" action="{{ route('requests.destroy', $request['id_permintaan']) }}" class="delete-request-form">
                                                     @csrf
                                                     @method('DELETE')

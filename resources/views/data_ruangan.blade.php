@@ -500,7 +500,7 @@
             .app-shell.sidebar-collapsed .superadmin-rooms-page {
                 width: 100%;
                 margin-left: 0;
-                padding: 5.3rem 1rem 1.8rem;
+                padding: 1.2rem 1rem 1.8rem;
             }
 
             .hero-card,
@@ -520,6 +520,19 @@
             body:has(.app-shell.sidebar-collapsed) .modal-shell {
                 padding: 1rem;
             }
+        }
+        @media (max-width: 640px) {
+            .table-wrap { overflow-x:visible; }
+            table.mobile-card-table { min-width:0; }
+            table.mobile-card-table thead { display:none; }
+            table.mobile-card-table, table.mobile-card-table tbody, table.mobile-card-table tr, table.mobile-card-table td { display:block; width:100%; }
+            table.mobile-card-table tr { padding:.35rem .9rem .95rem; border-bottom:1px solid #f6e7df; }
+            table.mobile-card-table td { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; padding:.68rem 0; border-bottom:1px dashed #f1ddd1; text-align:right; }
+            table.mobile-card-table td:last-child { border-bottom:0; }
+            table.mobile-card-table td::before { content:attr(data-label); flex:0 0 40%; color:#7b8794; font-size:.74rem; font-weight:800; text-transform:uppercase; text-align:left; }
+            table.mobile-card-table td > *:not(form) { max-width:58%; min-width:0; }
+            table.mobile-card-table .action-group { justify-content:flex-end; }
+            table.mobile-card-table td[data-label="Kondisi"] .condition-copy { overflow-wrap:anywhere; text-align:right; }
         }
     </style>
 </head>
@@ -633,7 +646,7 @@
                         <div class="empty-state">Belum ada data ruangan yang cocok dengan filter saat ini.</div>
                     @else
                         <div class="table-wrap">
-                            <table>
+                            <table class="mobile-card-table">
                                 <thead>
                                     <tr>
                                         <th>No</th>
@@ -657,27 +670,27 @@
                                                 : (str_contains($room['jenis_ruangan_raw'], 'lab') ? 'lab' : 'other');
                                         @endphp
                                         <tr>
-                                            <td>{{ $number }}</td>
-                                            <td>
+                                            <td data-label="No">{{ $number }}</td>
+                                            <td data-label="Nama Ruangan">
                                                 <div class="room-name">{{ $room['nama_ruangan'] }}</div>
                                                 <div class="room-meta">{{ $room['lokasi'] !== '-' ? $room['lokasi'] : 'Lokasi belum diisi' }}</div>
                                             </td>
-                                            <td>{{ $room['kode_ruangan'] }}</td>
-                                            <td><span class="pill {{ $typeClass }}">{{ $room['jenis_ruangan'] }}</span></td>
-                                            <td>{{ $room['unit'] }}</td>
-                                            <td>{{ $room['wali_kelas'] }}</td>
-                                            <td>{{ $room['ketua_kelas'] }}</td>
-                                            <td>
+                                            <td data-label="Kode">{{ $room['kode_ruangan'] }}</td>
+                                            <td data-label="Jenis"><span class="pill {{ $typeClass }}">{{ $room['jenis_ruangan'] }}</span></td>
+                                            <td data-label="Kelas">{{ $room['unit'] }}</td>
+                                            <td data-label="Wali / PJ">{{ $room['wali_kelas'] }}</td>
+                                            <td data-label="Ketua Kelas">{{ $room['ketua_kelas'] }}</td>
+                                            <td data-label="Total Inventaris">
                                                 <div class="inventory-summary">
                                                     <strong>{{ number_format($room['total_inventaris']) }} item</strong>
                                                     <span class="room-meta">{{ number_format($room['barang_baik']) }} baik, {{ number_format($room['barang_rusak']) }} rusak</span>
                                                 </div>
                                             </td>
-                                            <td>
+                                            <td data-label="Kondisi">
                                                 <span class="pill {{ $room['kondisi_class'] }}">{{ $room['kondisi_label'] }}</span>
                                                 <div class="condition-copy">{{ $room['kondisi_ringkas'] }}</div>
                                             </td>
-                                            <td>
+                                            <td data-label="Aksi">
                                                 <div class="action-group">
                                                     <button type="button" class="row-action js-open-modal" data-modal="edit-room-{{ $room['id_ruangan'] }}">
                                                         <i class="bi bi-pencil-square"></i>

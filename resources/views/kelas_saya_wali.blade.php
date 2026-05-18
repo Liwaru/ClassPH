@@ -331,8 +331,17 @@
             }
 
             .summary-grid { grid-template-columns: 1fr; }
-            .inventory-table-wrap { overflow-x: auto; }
-            .inventory-table { min-width: 720px; table-layout: auto; }
+            .inventory-table-wrap { overflow-x: visible; }
+            .inventory-table.mobile-card-table { min-width: 0; table-layout: auto; }
+            .inventory-table.mobile-card-table thead { display: none; }
+            .inventory-table.mobile-card-table,
+            .inventory-table.mobile-card-table tbody,
+            .inventory-table.mobile-card-table tr,
+            .inventory-table.mobile-card-table td { display: block; width: 100%; }
+            .inventory-table.mobile-card-table tr { padding: 0.3rem 1rem 0.95rem; border-bottom: 1px solid #f5e7de; }
+            .inventory-table.mobile-card-table td { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem 0; border-bottom: 1px dashed #f5e7de; text-align: right; }
+            .inventory-table.mobile-card-table td:last-child { border-bottom: 0; }
+            .inventory-table.mobile-card-table td::before { content: attr(data-label); flex: 0 0 38%; color: #6b7280; font-size: 0.74rem; font-weight: 800; text-align: left; text-transform: uppercase; }
         }
     </style>
 </head>
@@ -402,7 +411,7 @@
                                             <div class="empty-state">Belum ada data barang yang tercatat untuk kelas ini.</div>
                                         @else
                                             <div class="inventory-table-wrap">
-                                                <table class="inventory-table">
+                                                <table class="inventory-table mobile-card-table">
                                                     <thead>
                                                         <tr>
                                                             <th>Nama Barang</th>
