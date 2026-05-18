@@ -13,12 +13,12 @@ class PenugasanRuanganSeeder extends Seeder
     public function run(): void
     {
         $ruangan7A = DB::table('ruangan')->where('kode_ruangan', 'KLS-7A')->value('id_ruangan');
-        $admin = DB::table('users')->where('nama', 'admin')->value('id_user');
-        $hendrik = DB::table('users')->where('nama', 'Hendrik')->value('id_user');
+        $guru = DB::table('users')->where('nama', 'guru')->value('id_user');
+        $siswa = DB::table('users')->where('nama', 'siswa')->value('id_user');
 
         DB::table('penugasan_ruangan')->insert([
             [
-                'id_user' => $admin,
+                'id_user' => $guru,
                 'id_ruangan' => $ruangan7A,
                 'peran_ruangan' => 'wali_kelas',
                 'tanggal_mulai' => '2026-04-14',
@@ -26,7 +26,7 @@ class PenugasanRuanganSeeder extends Seeder
                 'status' => 'aktif',
             ],
             [
-                'id_user' => $hendrik,
+                'id_user' => $siswa,
                 'id_ruangan' => $ruangan7A,
                 'peran_ruangan' => 'ketua_kelas',
                 'tanggal_mulai' => '2026-04-14',

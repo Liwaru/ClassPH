@@ -13,13 +13,13 @@ class PersetujuanPermintaanSeeder extends Seeder
     public function run(): void
     {
         $permintaan = DB::table('permintaan')->pluck('id_permintaan', 'kode_permintaan');
-        $admin = DB::table('users')->where('nama', 'admin')->value('id_user');
-        $owner = DB::table('users')->where('nama', 'owner')->value('id_user');
+        $guru = DB::table('users')->where('nama', 'guru')->value('id_user');
+        $kepalaSekolah = DB::table('users')->where('nama', 'kepala sekolah')->value('id_user');
 
         DB::table('persetujuan_permintaan')->insert([
             [
                 'id_permintaan' => $permintaan['PMT-20260414-001'],
-                'id_user_penyetuju' => $admin,
+                'id_user_penyetuju' => $guru,
                 'tahap_persetujuan' => 'admin',
                 'status_persetujuan' => 'disetujui',
                 'catatan_persetujuan' => 'Disetujui wali kelas.',
@@ -27,7 +27,7 @@ class PersetujuanPermintaanSeeder extends Seeder
             ],
             [
                 'id_permintaan' => $permintaan['PMT-20260414-001'],
-                'id_user_penyetuju' => $owner,
+                'id_user_penyetuju' => $kepalaSekolah,
                 'tahap_persetujuan' => 'owner',
                 'status_persetujuan' => 'disetujui',
                 'catatan_persetujuan' => 'Disetujui kepala sekolah.',
@@ -35,7 +35,7 @@ class PersetujuanPermintaanSeeder extends Seeder
             ],
             [
                 'id_permintaan' => $permintaan['PMT-20260414-002'],
-                'id_user_penyetuju' => $admin,
+                'id_user_penyetuju' => $guru,
                 'tahap_persetujuan' => 'admin',
                 'status_persetujuan' => 'disetujui',
                 'catatan_persetujuan' => 'Menunggu persetujuan owner.',
@@ -43,7 +43,7 @@ class PersetujuanPermintaanSeeder extends Seeder
             ],
             [
                 'id_permintaan' => $permintaan['PMT-20260414-003'],
-                'id_user_penyetuju' => $admin,
+                'id_user_penyetuju' => $guru,
                 'tahap_persetujuan' => 'admin',
                 'status_persetujuan' => 'ditolak',
                 'catatan_persetujuan' => 'Jumlah permintaan belum sesuai kebutuhan kelas.',

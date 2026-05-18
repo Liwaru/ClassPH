@@ -789,7 +789,7 @@
 
 <header class="mobile-appbar">
     <a class="mobile-appbar-brand" href="{{ route('dashboard') }}">
-        <span class="mobile-appbar-logo"><img src="{{ asset('images/Infrasph.png') }}" alt="Logo InfraSPH"></span>
+        <span class="mobile-appbar-logo"><img src="{{ asset('images/InfraSPH.png') }}" alt="Logo InfraSPH"></span>
         <span class="mobile-appbar-title">InfraSPH</span>
     </a>
     <button type="button" class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="Buka navigasi" aria-expanded="false" aria-controls="sidebarNavigation">
@@ -803,7 +803,7 @@
         <a class="sidebar-brand-link" href="{{ route('dashboard') }}">
             <span class="sidebar-brand-main">
                 <span class="sidebar-brand-logo">
-                    <img src="{{ asset('images/Infrasph.png') }}" alt="Logo InfraSPH">
+            <img src="{{ asset('images/InfraSPH.png') }}" alt="Logo InfraSPH">
                 </span>
                 <span class="sidebar-brand-text">InfraSPH</span>
             </span>
